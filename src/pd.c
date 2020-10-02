@@ -9,10 +9,110 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+char* readInput(char* pd_ip, char* pd_port) {
+    char aux[5], c;
+    int pos = 0;
+
+    // read reg
+    while ((c = getchar()) != ' ') {
+        aux[pos++] = c;
+    }
+    aux[pos++] = '\0';
+    char reg[4] = "reg\0";
+    
+    if (strcmp(aux, reg) != 0) {
+        fprintf(stderr, "invalid input\n");
+        exit(EXIT_FAILURE);
+    }
+    //printf("%s\n", aux);
+
+    // read ist id
+    char uid[6];
+    pos = 0;
+
+    c = getchar();
+    if (c == '0') {
+        fprintf(stderr, "invalid ist id\n");
+        exit(EXIT_FAILURE);
+    }
+    else  {
+        uid[pos++] = c;
+    }
+
+    int size = 1;
+    while ((c = getchar()) != ' ') {
+        uid[pos++] = c;
+        size++;
+    }
+    if (size != 5) {
+        fprintf(stderr, "invalid ist id\n");
+        exit(EXIT_FAILURE);
+    }
+    uid[pos++] = '\0';
+
+    //printf("%s\n", uid);
+
+    // read password
+    char password[9];
+    pos = 0;
+
+    size = 0;
+    while ((c = getchar()) != '\n') {
+        password[pos++] = c;
+        size++;
+    }
+    if (size != 8) {
+        fprintf(stderr, "invalid password\n");
+        exit(EXIT_FAILURE);
+    }
+    password[pos++] = '\0';
+
+    //printf("%s\n", password);
+
+    // REG UID pass PDIP PDport
+    char* message = (char*) malloc(sizeof(char) * 45);
+
+    if (sprintf(message, "REG %s %s %s %s\n", uid, password, pd_ip, pd_port) < 0) {
+        fprintf(stderr, "ERRO");
+        exit(EXIT_FAILURE);
+    }
+
+    return message;
+}
+
+void sendMessage(char* message, char* as_ip, char* as_port) {
+    int fd,errcode;
+    ssize_t n;
+    socklen_t addrlen;
+    struct addrinfo hints,*res;
+    struct sockaddr_in addr;
+    char buffer[128];
+
+    fd = socket(AF_INET,SOCK_DGRAM,0); //UDP socket
+    if(fd == -1) exit(1);
+
+    memset(&hints,0,sizeof hints);
+    hints.ai_family = AF_INET; //IPv4
+    hints.ai_socktype = SOCK_DGRAM; //UDP socket
+
+    errcode = getaddrinfo(as_ip, as_port, &hints, &res) ;
+    if(errcode!=0)  exit(1);
+
+    n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
+    if(n==-1) exit(1);
+
+    addrlen = sizeof(addr);
+    n = recvfrom (fd, buffer, 128,0, (struct sockaddr*)&addr, &addrlen);
+    if(n == -1) exit(1);
+
+    freeaddrinfo(res);
+    close (fd);
+}
+
 
 int main(int argc, char **argv) {
 
-    if (argc != 8) {
+    if (argc < 2 || argc > 8) {
         fprintf(stderr, "usage: %s file", argv[0]);
         exit(EXIT_FAILURE);
     }
@@ -50,118 +150,23 @@ int main(int argc, char **argv) {
         }
     }
 
-    char aux[9];
-    int pos = 0;
+    char* message = readInput(pd_ip, pd_port);
 
-    // read reg
-    while ((c = getchar()) != ' ') {
-        aux[pos++] = c;
-    }
-    aux[pos++] = '\0';
-    char reg[4] = "reg";
-    
-    if (strcmp(aux, reg) != 0) {
-        fprintf(stderr, "invalid input");
-        exit(EXIT_FAILURE);
-    }
+    sendMessage(message, as_ip, as_port);
 
-    
-    // read ist id
-    char uid[6];
-    pos = 0;
-
-    c = getchar();
-    if (c == '0') {
-        fprintf(stderr, "invalid ist id");
-        exit(EXIT_FAILURE);
-    }
-    else  {
-        uid[pos++] = c;
-    }
-
-    int size = 1;
-    while ((c = getchar()) != ' ') {
-        uid[pos++] = c;
-        size++;
-    }
-    if (size != 5) {
-        fprintf(stderr, "invalid ist id");
-        exit(EXIT_FAILURE);
-    }
-    uid[pos++] = '\0';
-
-    // read password
-    char password[9];
-    pos = 0;
-
-    size = 0;
-    while ((c = getchar()) != '\n') {
-        password[pos++] = c;
-        size++;
-    }
-    if (size != 8) {
-        fprintf(stderr, "invalid password");
-        exit(EXIT_FAILURE);
-    }
-    password[pos++] = '\0';
-
-    // REG UID pass PDIP PDport
-    char message[45];
-
-    if (sprintf(message, "REG %s %s %s %s\n", uid, password, pd_ip, pd_port) < 0) {
-        fprintf(stderr, "ERRO");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("%s\n", message);
-
-    int fd,errcode;
-    ssize_t n;
-    socklen_t addrlen;
-    struct addrinfo hints,*res;
-    struct sockaddr_in addr;
-    char buffer[128];
-
-    fd = socket(AF_INET,SOCK_DGRAM,0); //UDP socket
-    if(fd == -1) exit(1);
-
-    memset(&hints,0,sizeof hints);
-    hints.ai_family = AF_INET; //IPv4
-    hints.ai_socktype = SOCK_DGRAM; //UDP socket
-
-    errcode = getaddrinfo(as_ip, as_port, &hints, &res) ;
-    if(errcode!=0)  exit(1);
-
-    n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
-    if(n==-1) exit(1);
-
-    addrlen = sizeof(addr);
-    n = recvfrom (fd, buffer, 128,0, (struct sockaddr*)&addr, &addrlen);
-    if(n == -1) exit(1);
-
-    write(1,"echo: ",6); write(1,buffer,n);
-
-    freeaddrinfo(res);
-    close (fd);
 
     /**
-
     char in_str[128];
     fd_set inputs, testfds;
     struct timeval timeout;
     int i,out_fds,n;
-
     FD_ZERO(&inputs); // Clear inputs
     FD_SET(0,&inputs); // Set standard input channel on
-
     while(1) {
-
         testfds=inputs;
         timeout.tv_sec=10;
         timeout.tv_usec=0;
-
         out_fds=select(FD_SETSIZE,&testfds,(fd_set *)NULL,(fd_set *)NULL,&timeout);
-
         switch(out_fds) {
             case 0:
             printf("Timeout event\n");
@@ -173,7 +178,6 @@ int main(int argc, char **argv) {
             if(FD_ISSET(0,&testfds)) {
                 if((n=read(0,in_str,127))!=0) {
                     if(n==-1) exit(1);
-
                     in_str[n]=0;
                     printf("From keyboard: %s\n",in_str);
                 }

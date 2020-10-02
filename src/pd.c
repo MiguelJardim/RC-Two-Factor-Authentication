@@ -3,6 +3,12 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+
 
 int main(int argc, char **argv) {
 
@@ -44,7 +50,74 @@ int main(int argc, char **argv) {
         }
     }
 
-    printf("%s %s %s %s\n", pd_ip, pd_port, as_ip, as_port);
+    int fd,errcode;
+    ssize_t n;
+    socklen_t addrlen;
+    struct addrinfo hints,*res;
+    struct sockaddr_in addr;
+    char buffer[128];
+
+    fd=socket(AF_INET,SOCK_DGRAM,0); //UDP socket
+    if(fd==-1) /*error*/exit(1);
+
+    memset(&hints,0,sizeof hints);
+    hints.ai_family = AF_INET; //IPv4
+    hints.ai_socktype = SOCK_DGRAM; //UDP socket
+
+    errcode = getaddrinfo(as_ip, as_port, &hints, &res) ;
+    if(errcode!=0) /*error*/ exit(1);
+
+    n = sendto(fd,"Hello!\n",7,0,res->ai_addr,res->ai_addrlen);
+    if(n==-1) /*error*/ exit(1);
+
+    addrlen = sizeof(addr);
+    n = recvfrom (fd,buffer,128,0, (struct sockaddr*)&addr,&addrlen);
+    if(n == -1) /*error*/ exit(1);
+
+    write(1,"echo: ",6); write(1,buffer,n);
+
+    freeaddrinfo(res);
+    close (fd);
+
+    /**
+
+    char in_str[128];
+    fd_set inputs, testfds;
+    struct timeval timeout;
+    int i,out_fds,n;
+
+    FD_ZERO(&inputs); // Clear inputs
+    FD_SET(0,&inputs); // Set standard input channel on
+
+    while(1) {
+
+        testfds=inputs;
+        timeout.tv_sec=10;
+        timeout.tv_usec=0;
+
+        out_fds=select(FD_SETSIZE,&testfds,(fd_set *)NULL,(fd_set *)NULL,&timeout);
+
+        switch(out_fds) {
+            case 0:
+            printf("Timeout event\n");
+            break;
+            case -1:
+            perror("select");
+            exit(1);
+            default:
+            if(FD_ISSET(0,&testfds)) {
+                if((n=read(0,in_str,127))!=0) {
+                    if(n==-1) exit(1);
+
+                    in_str[n]=0;
+                    printf("From keyboard: %s\n",in_str);
+                }
+            }
+        }
+    }*/
+
+
+
 
     return 0;
 }

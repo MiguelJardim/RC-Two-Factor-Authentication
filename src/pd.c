@@ -9,65 +9,149 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-char* readInput(char* pd_ip, char* pd_port) {
-    char aux[5], c;
-    int pos = 0;
+char* split(char* input, int* index, char separator, int size) {
+    char* output = (char*) malloc(sizeof(char) * size);
+    int output_index = 0;
+
+    char c = input[(*index)++];
+    if (c == separator) {
+        free(output);
+        return NULL;
+    }
+
+    while (c != separator && c != EOF) {
+        if (output_index == size - 1) {
+            free(output);
+            return NULL;
+        }
+        output[output_index++] = c;
+        c = input[(*index)++];
+    }
+
+    output[output_index] = '\0';
+
+    return output;
+}
+
+int validate_uid(char* uid) {
+    if (strlen(uid) != 5) return -1;
+    else if (uid[0] == '0') return -1;
+
+    for (int i = 1; i < 5; i++) {
+        if (uid[i] < '0' || uid[i] > '9') return -1;
+    }
+
+    return 0;
+}
+
+int validate_password(char* password) {
+    if (strlen(password) != 8) return -1;
+    
+    for (int i = 0; i < 8; i++) {
+        if (!((password[i] >= '0' && password[i] <= '9') || (password[i] >= 'a' && password[i] <= 'z') || (password[i] >= 'A' && password[i] <= 'Z'))) return -1;
+    }
+
+    return 0;
+}
+
+int validate_ip(char* ip) {
+    if (strlen(ip) < 7 || strlen(ip) > 15) return -1;
+
+    char* validated_ip = (char*) malloc(sizeof(char) * 16);
+    int index = 0;
+    int validated_index = 0;
+    char c = ip[index++];
+    int count = 0;
+    int dot = 0;
+
+    while (c != '\0') {
+        count = 0;
+        if (c < '0' || c > '9') {
+            free(validated_ip);
+            return -1;
+        }
+        else if (c != '0') validated_ip[validated_index++] = c;
+
+        count ++;
+        c = ip[index++];
+
+        while (c != '.' && count < 3) {
+            if (c < '0' || c > '9') {
+                free(validated_ip);
+                return -1;
+            }
+            else validated_ip[validated_index++] = c;
+            c = ip[index++];
+            count++;
+        }
+        if (dot < 3) {
+            validated_ip[validated_index++] = '.';
+            dot++;
+        }
+        c = ip[index++];
+
+    }
+    validated_ip[validated_index] = '\0';
+
+    strcpy(ip, validated_ip);
+    free(validated_ip);
+
+    return 0;
+}
+
+int validate_port(char* port) {
+    if (strlen(port) != 5) return -1;
+
+    for (int i = 0; i < 5; i++) {
+        if (port[i] < '0' || port[i] >'9') return -1;
+    }
+    if (port[0] == '0') return -1;
+    return 0;
+}
+
+char* read_input(char* pd_ip, char* pd_port) {
+    char input[256];
+
+    if (fgets(input, 256, stdin) == NULL) {
+        exit(EXIT_FAILURE);
+    }
+
+    char exit_txt[5] = "exit\0";
+    if (strcmp(input, exit_txt) == 0) {
+        exit(EXIT_SUCCESS);
+    }
+
+    int input_index = 0;
 
     // read reg
-    while ((c = getchar()) != ' ') {
-        aux[pos++] = c;
-    }
-    aux[pos++] = '\0';
     char reg[4] = "reg\0";
+
+    char* aux = split(input, &input_index, ' ', 4);
+    if (aux == NULL) exit(EXIT_FAILURE);
     
     if (strcmp(aux, reg) != 0) {
         fprintf(stderr, "invalid input\n");
         exit(EXIT_FAILURE);
     }
-    //printf("%s\n", aux);
 
     // read ist id
-    char uid[6];
-    pos = 0;
 
-    c = getchar();
-    if (c == '0') {
-        fprintf(stderr, "invalid ist id\n");
-        exit(EXIT_FAILURE);
-    }
-    else  {
-        uid[pos++] = c;
-    }
+    char* uid = split(input, &input_index, ' ', 6);
+    if (uid == NULL) exit(EXIT_FAILURE);
 
-    int size = 1;
-    while ((c = getchar()) != ' ') {
-        uid[pos++] = c;
-        size++;
+    if (validate_uid(uid) == -1) {
+        printf("invalid uid: %s\n", uid);
+        return NULL;
     }
-    if (size != 5) {
-        fprintf(stderr, "invalid ist id\n");
-        exit(EXIT_FAILURE);
-    }
-    uid[pos++] = '\0';
-
-    //printf("%s\n", uid);
 
     // read password
-    char password[9];
-    pos = 0;
+    char* password = split(input, &input_index, '\n', 9);
+    if (password == NULL) exit(EXIT_FAILURE);
 
-    size = 0;
-    while ((c = getchar()) != '\n') {
-        password[pos++] = c;
-        size++;
+    if (validate_password(password) == -1) {
+        printf("invalid password: %s\n", password);
+        return NULL;
     }
-    if (size != 8) {
-        fprintf(stderr, "invalid password\n");
-        exit(EXIT_FAILURE);
-    }
-    password[pos++] = '\0';
-
-    //printf("%s\n", password);
 
     // REG UID pass PDIP PDport
     char* message = (char*) malloc(sizeof(char) * 45);
@@ -77,16 +161,20 @@ char* readInput(char* pd_ip, char* pd_port) {
         exit(EXIT_FAILURE);
     }
 
+    free(aux);
+    free(uid);
+    free(password);
+
     return message;
 }
 
-void sendMessage(char* message, char* as_ip, char* as_port) {
+char* send_message(char* message, char* as_ip, char* as_port) {
     int fd,errcode;
     ssize_t n;
     socklen_t addrlen;
     struct addrinfo hints,*res;
     struct sockaddr_in addr;
-    char buffer[128];
+    char* buffer = (char*) malloc(sizeof(char) * 128);
 
     fd = socket(AF_INET,SOCK_DGRAM,0); //UDP socket
     if(fd == -1) exit(1);
@@ -98,7 +186,7 @@ void sendMessage(char* message, char* as_ip, char* as_port) {
     errcode = getaddrinfo(as_ip, as_port, &hints, &res) ;
     if(errcode!=0)  exit(1);
 
-    n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
+    n = sendto(fd, message, strlen(message) + 1, 0, res->ai_addr, res->ai_addrlen);
     if(n==-1) exit(1);
 
     addrlen = sizeof(addr);
@@ -107,6 +195,8 @@ void sendMessage(char* message, char* as_ip, char* as_port) {
 
     freeaddrinfo(res);
     close (fd);
+
+    return buffer;
 }
 
 
@@ -150,9 +240,56 @@ int main(int argc, char **argv) {
         }
     }
 
-    char* message = readInput(pd_ip, pd_port);
+    if (validate_ip(pd_ip) == -1) {
+        printf("invalid pd_ip: %s\n", pd_ip);
+        free(pd_ip);
+        free(pd_port);
+        free(as_ip);
+        free(as_port);
+        exit(EXIT_FAILURE);
+    }
+    if (validate_ip(as_ip) == -1) {
+        printf("invalid as_ip: %s\n", as_ip);
+        free(pd_ip);
+        free(pd_port);
+        free(as_ip);
+        free(as_port);
+        exit(EXIT_FAILURE);
+    }
+    if (validate_port(pd_port) == -1) {
+        printf("invalid pd_port: %s\n", pd_port);
+        free(pd_ip);
+        free(pd_port);
+        free(as_ip);
+        free(as_port);
+        exit(EXIT_FAILURE);
+    }
+    if (validate_port(as_port) == -1) {
+        printf("invalid as_port: %s\n", as_port);
+        free(pd_ip);
+        free(pd_port);
+        free(as_ip);
+        free(as_port);
+        exit(EXIT_FAILURE);
+    }
 
-    sendMessage(message, as_ip, as_port);
+    char* message = read_input(pd_ip, pd_port);
+    if (message == NULL) {
+        free(pd_ip);
+        free(pd_port);
+        free(as_ip);
+        free(as_port);
+        exit(EXIT_FAILURE);
+    }
+
+    char* answer = send_message(message, as_ip, as_port);
+
+    char expected_message[8] = "RRG OK\n\0";
+
+    if (strcmp(expected_message, answer) == 0) {
+        printf("Registration successfull\n");
+    }
+    // TODO handle invalid answer
 
 
     /**

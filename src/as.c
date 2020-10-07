@@ -201,14 +201,6 @@ char* receive_message(char* as_port) {
         addrlen = sizeof(addr);
         n = recvfrom (fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
         if (n == -1) /*error*/exit(1);
-
-        char* pd_ip = (char*) malloc(sizeof(char) * 16);
-        char* pd_port = (char*) malloc(sizeof(char) * 6);
-        char* reg_status = read_message(buffer, pd_ip, pd_port);
-
-
-        n = sendto (fd, reg_status, n, 0, (struct sockaddr*)&addr, addrlen);
-        if(n==-1)/*error*/exit(1);
         }
 
     freeaddrinfo(res);
@@ -216,6 +208,32 @@ char* receive_message(char* as_port) {
 
     return buffer;
 }
+
+void send_message(char* message, char* pd_ip, char* pd_port) {
+    int fd, errcode;
+    ssize_t n;
+    socklen_t addrlen;
+    struct addrinfo hints,*res;
+    struct sockaddr_in addr;
+    char* buffer = (char*) malloc(sizeof(char) * 128);
+
+    fd = socket(AF_INET,SOCK_DGRAM,0); //UDP socket
+    if(fd == -1) exit(1);
+
+    memset(&hints,0,sizeof hints);
+    hints.ai_family = AF_INET; //IPv4
+    hints.ai_socktype = SOCK_DGRAM; //UDP socket
+
+    errcode = getaddrinfo(pd_ip, pd_port, &hints, &res);
+    if(errcode!=0)  exit(1);
+
+    n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
+    if(n==-1) exit(1);
+
+    freeaddrinfo(res);
+    close (fd);
+}
+
 
 int main(int argc, char **argv) {
 
@@ -253,8 +271,11 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    receive_message(as_port);
-
+    char* message_received = receive_message(as_port);
+    char* pd_ip = (char*) malloc(sizeof(char) * 16);
+    char* pd_port = (char*) malloc(sizeof(char) * 6);
+    char* reg_status = read_message(message_received, pd_ip, pd_port);
+    send_message(reg_status, pd_ip, pd_port);
 
 
 

@@ -186,7 +186,7 @@ char* send_message(char* message, char* as_ip, char* as_port) {
     errcode = getaddrinfo(as_ip, as_port, &hints, &res) ;
     if(errcode!=0)  exit(1);
 
-    n = sendto(fd, message, strlen(message) + 1, 0, res->ai_addr, res->ai_addrlen);
+    n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
     if(n==-1) exit(1);
 
     addrlen = sizeof(addr);
@@ -280,6 +280,9 @@ int main(int argc, char **argv) {
 
     if (strcmp(expected_message, answer) == 0) {
         printf("Registration successfull\n");
+    }
+    else {
+        printf("%s", answer);
     }
     // TODO handle invalid answer
 

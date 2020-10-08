@@ -195,15 +195,10 @@ char* receive_message(char* as_port) {
     if (n ==-1) /*error*/ exit(1);
 
     char* buffer = (char*) malloc(sizeof(char) * 128);
-    printf("aqui1\n");
-    while (1){
-        addrlen = sizeof(addr);
-        n = recvfrom (fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
-        if (n == -1) /*error*/exit(1);
-    }
     
-    printf("%s\n", buffer);
-    printf("aqui\n");
+    addrlen = sizeof(addr);
+    n = recvfrom (fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
+    if (n == -1) /*error*/exit(1);
 
     freeaddrinfo(res);
     close (fd);
@@ -277,6 +272,7 @@ int main(int argc, char **argv) {
     }
 
     char* message_received = receive_message(as_port);
+    printf("%s", message_received);
     char* pd_ip = (char*) malloc(sizeof(char) * 16);
     char* pd_port = (char*) malloc(sizeof(char) * 6);
     char* reg_status = read_message(message_received, pd_ip, pd_port);

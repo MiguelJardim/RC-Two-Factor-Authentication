@@ -11,6 +11,7 @@
 
 #define FALSE 0
 #define TRUE !(FALSE)
+#define SIZE 30
 
 
 char* split(char* input, int* index, char separator, int size) {
@@ -160,6 +161,8 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    int as_ip_f = FALSE, as_port_f = FALSE, fs_ip_f = FALSE, fs_port_f = FALSE;
+
     char* as_ip = (char*) malloc(sizeof(char) * 16);
     char* as_port = (char*) malloc(sizeof(char) * 6);
 
@@ -170,15 +173,19 @@ int main(int argc, char **argv) {
     while ((c = getopt (argc, argv, "n:p:m:q:")) != -1) {
         switch (c) {
         case 'n':
+            as_ip_f = TRUE;
             strcpy(as_ip, optarg);
             break;
         case 'p':
+            as_port_f = TRUE;
             strcpy(as_port, optarg);
             break;
         case 'm':
+            fs_ip_f = TRUE;
             strcpy(fs_ip, optarg);
             break;
         case 'q':
+            fs_port_f = TRUE;
             strcpy(fs_port, optarg);
             break;
         default:
@@ -189,14 +196,14 @@ int main(int argc, char **argv) {
     // ip omitido fica o da propria maquina, quer as, quer fs
 
     // default as_port value
-    if (as_port == NULL) {
-        if (sprintf(as_port, "58016") < 0 )  {
+    if (!as_port_f) {
+        if (sprintf(as_port, "58047") < 0 )  {
             // TODO erro
             exit(EXIT_FAILURE);
         }
     }
-    if (fs_port == NULL) {
-        if (sprintf(fs_port, "59016") < 0 )  {
+    if (!fs_port_f) {
+        if (sprintf(fs_port, "59047") < 0 )  {
             // TODO erro
             exit(EXIT_FAILURE);
         }
@@ -235,9 +242,11 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    
+
     // printf("%s %s %s %s\n", as_ip, as_port, fs_ip, fs_port);
 
-    char buffer[128];
+    char buffer[128] = "LOG 92528 password\n\0";
     char* output;
 
     int fd = connect_tcp(as_ip, as_port);

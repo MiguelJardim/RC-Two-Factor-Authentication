@@ -8,10 +8,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#define PORT "58001"
 
-#define FAlSE 0;
-#define TRUE 1;
+#define FALSE 0
+#define TRUE 1
 
 int validate_port(char* port) {
     if (strlen(port) != 5) return -1;
@@ -118,9 +117,9 @@ char* read_message(char* message, char* ip, char* port) {
 
     char* action = split(message, &input_index, ' ', 4);
     char aux[4] = "REG\0";
-    char ok[4] = "OK\0";
-    char nok[4] = "NOK\0";
-    char* reg_status = (char*) malloc(sizeof(char) * 4);
+    char ok[8] = "RRG OK\0";
+    char nok[8] = "RRG NOK\0";
+    char* reg_status = (char*) malloc(sizeof(char) * 8);
 
     if (strcmp(aux, action) != 0) {
         free(action);
@@ -189,19 +188,22 @@ char* receive_message(char* as_port) {
     hints.ai_socktype = SOCK_DGRAM; // UDP socket
     hints.ai_flags = AI_PASSIVE;
 
-    errcode = getaddrinfo (NULL, PORT, &hints, &res);
+    errcode = getaddrinfo (NULL, as_port, &hints, &res);
     if (errcode != 0) /*error*/ exit(1);
 
     n = bind (fd, res->ai_addr, res->ai_addrlen);
     if (n ==-1) /*error*/ exit(1);
 
     char* buffer = (char*) malloc(sizeof(char) * 128);
-
+    printf("aqui1\n");
     while (1){
         addrlen = sizeof(addr);
         n = recvfrom (fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
         if (n == -1) /*error*/exit(1);
-        }
+    }
+    
+    printf("%s\n", buffer);
+    printf("aqui\n");
 
     freeaddrinfo(res);
     close (fd);
@@ -245,12 +247,14 @@ int main(int argc, char **argv) {
     char* as_port = (char*) malloc(sizeof(char) * 6);
 
     int flagV;
+    int flagPort = FALSE;
 
     char c;
     while ((c = getopt (argc, argv, "p:v")) != -1) {
         switch (c) {
         case 'p':
             strcpy(as_port, optarg);
+            flagPort = TRUE;
             break;
         case 'v':
             flagV = TRUE;
@@ -260,8 +264,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (as_port == NULL) {
-        char default_port[6] = "58059\0";
+    
+    if (flagPort == FALSE) {
+        char default_port[6] = "58047\0";
         strcpy(as_port, default_port);
     }
 

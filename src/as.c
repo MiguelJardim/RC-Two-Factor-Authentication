@@ -8,9 +8,13 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #define FALSE 0
 #define TRUE 1
+
+int noUsers = 1;
 
 int validate_port(char* port) {
     if (strlen(port) != 5) return -1;
@@ -22,7 +26,7 @@ int validate_port(char* port) {
     return 0;
 }
 
-int validate_uid(char* uid) {
+int validate_u_ist_id(char* uid) {
     if (strlen(uid) != 5) return -1;
     else if (uid[0] == '0') return -1;
 
@@ -98,8 +102,8 @@ char* split(char* input, int* index, char separator, int size) {
         return NULL;
     }
 
-    while (c != separator && c != EOF) {
-        if (output_index == size - 1) {
+    while (c != separator && c != EOF && c != '\n') {
+        if (output_index == size - 1)  {
             free(output);
             return NULL;
         }
@@ -112,65 +116,130 @@ char* split(char* input, int* index, char separator, int size) {
     return output;
 }
 
-char* read_message(char* message, char* ip, char* port) {
-    int input_index = 0;
-
-    char* action = split(message, &input_index, ' ', 4);
-    char aux[4] = "REG\0";
-    char ok[8] = "RRG OK\0";
-    char nok[8] = "RRG NOK\0";
-    char* reg_status = (char*) malloc(sizeof(char) * 8);
-
-    if (strcmp(aux, action) != 0) {
-        free(action);
-        strcpy(reg_status, nok);
+char* registUser(char* message, int i) {  
+    int input_index = i;
+    char ok[9] = "RRG OK\n\0";
+    char nok[9] = "RRG NOK\n\0";
+    char* reg_status = (char*) malloc(sizeof(char) * 9);
+    strcpy(reg_status, nok);
+    
+    char* u_ist_id = split(message, &input_index, ' ', 6);
+    if (validate_u_ist_id(u_ist_id) != 0) {
+        free(u_ist_id);
         return reg_status;
     }
-
-    char* uid = split(message, &input_index, ' ', 6);
-    if (validate_uid(uid) != 0) {
-        free(action);
-        free(uid);
-        strcpy(reg_status, nok);
-        return reg_status;
-    }
-
+    
     char* password = split(message, &input_index, ' ', 9);
     if (validate_password(password) != 0) {
-        free(action);
-        free(uid);
+        free(u_ist_id);
         free(password);
-        strcpy(reg_status, nok);
         return reg_status;
     }
-
+    
     char* pd_ip = split(message, &input_index, ' ', 16);
-    strcpy(ip, pd_ip);
     if (validate_ip(pd_ip) != 0) {
-        free(action);
-        free(uid);
+        free(u_ist_id);
         free(password);
         free(pd_ip);
-        strcpy(reg_status, nok);
         return reg_status;
     }
 
-
     char* pd_port = split(message, &input_index, ' ', 6);
-    strcpy(port, pd_port);
     if (validate_port(pd_port) != 0) {
-        free(action);
-        free(uid);
+        free(u_ist_id);
         free(password);
         free(pd_ip);
         free(pd_port);
-        strcpy(reg_status, nok);
         return reg_status;
     }
 
+    struct stat st = {0};
+
+    char uidNumber[3];
+    sprintf(uidNumber, "%d", noUsers);
+    char dir[13] = "USERS/UID\0";
+    strcat(dir, uidNumber);
+
+    if (stat(dir, &st) == -1) {
+        mkdir(dir, 0700);
+    }
+    
+    FILE* uid_pass_file;
+    FILE * uid_reg_file;
+
+    char pass_filename[15] = "UID\0";
+    strcat(pass_filename, uidNumber);
+    char reg_filename[14];
+    strcpy(reg_filename, pass_filename);
+    strcat(pass_filename, "_pass.txt\0");
+    strcat(reg_filename, "_reg.txt\0");
+    uid_pass_file = fopen(pass_filename, "w");
+    uid_reg_file = fopen(reg_filename, "w");
+
+    if (uid_pass_file == NULL || uid_reg_file == NULL) {      
+        printf("Unable to create file.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(uid_pass_file, "%s\n", password);
+    fprintf(uid_reg_file, "%s %s\n", pd_ip, pd_port);
+
+    fclose(uid_pass_file);
+    fclose(uid_reg_file);
+
+    noUsers++;
+    free(u_ist_id);
+    free(password);
+    free(pd_ip);
+    free(pd_port);
     strcpy(reg_status, ok);
     return reg_status;
 }
+
+char* treatMessage(char* message) {
+    int input_index = 0;
+
+    char* action = split(message, &input_index, ' ', 4);
+    
+    char reg[4] = "REG\0";
+    if (strcmp(action, reg) == 0) {
+        char* status = registUser(message, input_index);
+        free(action);
+        return status;
+        //trata de verificar o REG
+    }
+
+    char log[4] = "LOG\0";
+    if (strcmp(action, log) == 0) {
+        free(action);
+        //trata de fazer o Login
+    }
+
+    char req[4] = "REQ\0";
+    if (strcmp(action, req) == 0) {
+        free(action);
+        //trata a operacao req
+    }
+
+    char aut[4] = "AUT\0";
+    if (strcmp(action, aut) == 0) {
+        free(action);
+        //trata a operacao aut
+    }
+
+    char vld[4] = "VLD\0";
+    if (strcmp(action, vld) == 0) {
+        free(action);
+        //trata a operacao vld
+    }
+
+    //nenhuma operacao valida
+    char err[4] = "ERR\0";
+    char* status = (char*) malloc(sizeof(char) * 4);
+    strcpy(status, err);
+    return status;
+}
+
 
 char* receive_message(char* as_port) {
     int fd, errcode;
@@ -178,7 +247,6 @@ char* receive_message(char* as_port) {
     ssize_t n;
     socklen_t addrlen;
     struct sockaddr_in addr;
-
 
     fd = socket(AF_INET,SOCK_DGRAM, 0);
     if (fd == -1) /*error*/exit(1);
@@ -195,15 +263,21 @@ char* receive_message(char* as_port) {
     if (n ==-1) /*error*/ exit(1);
 
     char* buffer = (char*) malloc(sizeof(char) * 128);
-    
-    addrlen = sizeof(addr);
-    n = recvfrom (fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
-    if (n == -1) /*error*/exit(1);
+    while(1) {
+        addrlen = sizeof(addr);
+        n = recvfrom (fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
+        if (n == -1) /*error*/exit(1);
+        
+        char* answer = treatMessage(buffer);
+        free(buffer);
+
+        n= sendto (fd, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
+        if(n==-1)/*error*/exit(1);
+    }
 
     freeaddrinfo(res);
     close (fd);
-
-    return buffer;
+    
 }
 
 void send_message(char* message, char* pd_ip, char* pd_port) {
@@ -259,7 +333,6 @@ int main(int argc, char **argv) {
         }
     }
 
-    
     if (flagPort == FALSE) {
         char default_port[6] = "58047\0";
         strcpy(as_port, default_port);
@@ -271,15 +344,21 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    char* message_received = receive_message(as_port);
-    printf("%s", message_received);
-    char* pd_ip = (char*) malloc(sizeof(char) * 16);
-    char* pd_port = (char*) malloc(sizeof(char) * 6);
-    char* reg_status = read_message(message_received, pd_ip, pd_port);
-    send_message(reg_status, pd_ip, pd_port);
+    //new directory USERS
+    struct stat st = {0};
 
+    if (stat("USERS", &st) == -1) {
+        mkdir("USERS", 0700);
+    }
 
+    receive_message(as_port);
+    
 
+    if (stat("USERS", &st) == 0) {
+        rmdir("USERS");
+    }
+
+    return 0;
 
 
 

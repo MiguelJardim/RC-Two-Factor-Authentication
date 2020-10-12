@@ -9,6 +9,9 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+#define FALSE 0
+#define TRUE !(FALSE)
+
 char* split(char* input, int* index, char separator, int size) {
     char* output = (char*) malloc(sizeof(char) * size);
     int output_index = 0;
@@ -61,37 +64,56 @@ int validate_ip(char* ip) {
     int index = 0;
     int validated_index = 0;
     char c = ip[index++];
-    int count = 0;
-    int dot = 0;
-
+    int digits = 0;
+    int dots = 0;
+    
     while (c != '\0') {
-        count = 0;
+
+        digits = 0;
+
         if (c < '0' || c > '9') {
             free(validated_ip);
             return -1;
         }
-        else if (c != '0') validated_ip[validated_index++] = c;
 
-        count ++;
+        if (c != '0') {
+            validated_ip[validated_index++] = c;
+            digits++;  
+        }
+
         c = ip[index++];
-
-        while (c != '.' && count < 3) {
+        while (c != '.' && c != '\0' && digits < 3) {
+            
             if (c < '0' || c > '9') {
                 free(validated_ip);
                 return -1;
             }
-            else validated_ip[validated_index++] = c;
+
+            validated_ip[validated_index++] = c;
+            digits++;
+
             c = ip[index++];
-            count++;
         }
-        if (dot < 3) {
-            validated_ip[validated_index++] = '.';
-            dot++;
+
+        if (digits == 0) {
+            free(validated_ip);
+            return -1;
         }
+        else if (c == '.' && dots < 3) {
+            validated_ip[validated_index++] = c;
+            dots++;
+        }
+        else if (c == '\0' && dots == 3) {
+            validated_ip[validated_index++] = c;
+        }
+        else {
+            free(validated_ip);
+            return -1;
+        }
+
         c = ip[index++];
 
     }
-    validated_ip[validated_index] = '\0';
 
     strcpy(ip, validated_ip);
     free(validated_ip);
@@ -207,6 +229,8 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    int as_ip_flag = FALSE, pd_port_flag = FALSE, as_port_flag = FALSE;
+
     char* pd_ip = (char*) malloc(sizeof(char) * 16);
     strcpy(pd_ip, argv[1]);
 
@@ -220,15 +244,32 @@ int main(int argc, char **argv) {
         switch (c) {
         case 'd':
             strcpy(pd_port, optarg);
+            pd_port_flag = TRUE;
             break;
         case 'n':
             strcpy(as_ip, optarg);
+            as_ip_flag = TRUE;
             break;
         case 'p':
             strcpy(as_port, optarg);
+            as_port_flag = TRUE;
             break;
         default:
             abort();
+        }
+    }
+    
+    if (!as_ip_flag) strcpy(as_ip, pd_ip);
+    if (!pd_port_flag) {
+        if (sprintf(pd_port, "57047") < 0) {
+            fprintf(stderr, "ERRO");
+            exit(EXIT_FAILURE);
+        }
+    }
+    if (!as_port_flag) {
+        if (sprintf(as_port, "58047") < 0) {
+            fprintf(stderr, "ERRO");
+            exit(EXIT_FAILURE);
         }
     }
 

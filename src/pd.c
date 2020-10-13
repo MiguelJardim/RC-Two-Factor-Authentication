@@ -206,7 +206,7 @@ int main(int argc, char **argv) {
                     n= recvfrom (fd_as,in_str,128,0, (struct sockaddr*)&addr,&addrlen);
                     if(n==-1)/*error*/exit(1);
 
-                    printf("%s", in_str);
+                    printf("udp: %s", in_str);
                     
                 }
                 break;

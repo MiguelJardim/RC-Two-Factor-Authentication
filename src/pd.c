@@ -145,7 +145,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    int fd_as = open_udp(as_port);
+    int fd_as = open_udp(pd_port);
 
     char* in_str = (char*) malloc(sizeof(char) * 127);
     fd_set inputs, testfds;
@@ -204,10 +204,7 @@ int main(int argc, char **argv) {
                     struct sockaddr_in addr;
                     socklen_t addrlen=sizeof(addr);
                     n= recvfrom (fd_as,in_str,128,0, (struct sockaddr*)&addr,&addrlen);
-                    if(n==-1)/*error*/exit(1);
-
-                    printf("udp: %s", in_str);
-                    
+                    if(n==-1)/*error*/exit(1);                    
                 }
                 break;
         }

@@ -43,6 +43,7 @@ int open_udp(char* port) {
     hints.ai_family=AF_INET; // IPv4
     hints.ai_socktype=SOCK_DGRAM; // UDP socket
     hints.ai_flags=AI_PASSIVE;
+    printf("-%s-", port);
 
     errcode= getaddrinfo (NULL,port,&hints,&res);
     if(errcode!=0) /*error*/ exit(1);
@@ -50,7 +51,7 @@ int open_udp(char* port) {
     n= bind (fd,res->ai_addr, res->ai_addrlen);
     if(n==-1) /*error*/ exit(1);
 
-    freeaddrinfo(res);
+    //freeaddrinfo(res);
     
     return fd;
 

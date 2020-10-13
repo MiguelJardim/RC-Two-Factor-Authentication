@@ -200,12 +200,12 @@ int main(int argc, char **argv) {
 
                     }
                 }
-                else if (FD_ISSET(fd_as, &testfds)) {
+                if (FD_ISSET(fd_as, &testfds)) {
                     struct sockaddr_in addr;
                     socklen_t addrlen=sizeof(addr);
                     n= recvfrom (fd_as,in_str,128,0, (struct sockaddr*)&addr,&addrlen);
-                    if(n==-1)/*error*/exit(1);                    
-                }
+                    if(n==-1) /*error*/ break;                    
+                } 
                 break;
         }
     }

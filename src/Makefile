@@ -7,7 +7,7 @@ CFLAGS =-g -Wall -Wextra -I../
 
 all: pd
 
-pd: ../aux/validation.c ../aux/conection.c
+pd: pd.c ../aux/validation.c ../aux/conection.c
 	$(CC) $(CFLAGS) pd.c -o pd ../aux/validation.c ../aux/conection.c
 
 clean:

@@ -201,10 +201,12 @@ int main(int argc, char **argv) {
                     }
                 }
                 if (FD_ISSET(fd_as, &testfds)) {
+                    printf("read upd\n");
                     struct sockaddr_in addr;
                     socklen_t addrlen=sizeof(addr);
                     n= recvfrom (fd_as,in_str,128,0, (struct sockaddr*)&addr,&addrlen);
-                    if(n==-1) /*error*/ break;                    
+                    if(n==-1) /*error*/ break;        
+                    printf("-%s\n", in_str);      
                 } 
                 break;
         }

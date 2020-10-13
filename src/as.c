@@ -14,7 +14,9 @@
 #define FALSE 0
 #define TRUE 1
 
-int noUsers = 1;
+int no_users = 0;
+
+char** uid_vector;
 
 int validate_port(char* port) {
     if (strlen(port) != 5) return -1;
@@ -153,26 +155,37 @@ char* registUser(char* message, int i) {
         return reg_status;
     }
 
-    struct stat st = {0};
+    for (int i = 0; i < no_users; i++) {
+        if (strcmp(uid_vector[i], u_ist_id) == 0) {
+            free(u_ist_id);
+            free(password);
+            free(pd_ip);
+            free(pd_port);
+            return reg_status;
+        }
+    }
+    strcpy(uid_vector[no_users], u_ist_id);
 
-    char uidNumber[3];
-    sprintf(uidNumber, "%d", noUsers);
-    char dir[13] = "USERS/UID\0";
-    strcat(dir, uidNumber);
+    struct stat st = {0};
+    
+    no_users++;
+
+    char dir[13];
+    sprintf(dir, "USERS/UID%d", no_users);
 
     if (stat(dir, &st) == -1) {
         mkdir(dir, 0700);
     }
-    
+
     FILE* uid_pass_file;
     FILE * uid_reg_file;
 
-    char pass_filename[15] = "UID\0";
-    strcat(pass_filename, uidNumber);
-    char reg_filename[14];
-    strcpy(reg_filename, pass_filename);
-    strcat(pass_filename, "_pass.txt\0");
-    strcat(reg_filename, "_reg.txt\0");
+    char pass_filename[28];
+    char reg_filename[28];
+
+    sprintf(pass_filename, "USERS/UID%d/UID%d_pass.txt", no_users, no_users);
+    sprintf(reg_filename, "USERS/UID%d/UID%d_reg.txt", no_users, no_users);
+
     uid_pass_file = fopen(pass_filename, "w");
     uid_reg_file = fopen(reg_filename, "w");
 
@@ -187,13 +200,85 @@ char* registUser(char* message, int i) {
     fclose(uid_pass_file);
     fclose(uid_reg_file);
 
-    noUsers++;
+    
     free(u_ist_id);
     free(password);
     free(pd_ip);
     free(pd_port);
     strcpy(reg_status, ok);
     return reg_status;
+}
+
+char* loginUser(char* message, int i) {
+    int input_index = i;
+    char ok[9] = "RLO OK\n\0"; // pass e id corretos
+    char nok[9] = "RLO NOK\n\0";    //pass incorreta, id existente
+    char err[9] = "RLO ERR\n\0";    //id inexistente
+    char* reg_status = (char*) malloc(sizeof(char) * 9);
+    strcpy(reg_status, nok);
+
+    char* u_ist_id = split(message, &input_index, ' ', 6);
+    if (validate_u_ist_id(u_ist_id) != 0) {
+        free(u_ist_id);
+        return reg_status;
+    }
+
+    char* password = split(message, &input_index, ' ', 9);
+    if (validate_password(password) != 0) {
+        free(u_ist_id);
+        free(password);
+        return reg_status;
+    }
+
+    for (int i = 0; i < no_users; i++) {
+        if (strcmp(uid_vector[i], u_ist_id) == 0) {
+            char file_pass_path[28];
+            FILE* pass_file;
+            sprintf(file_pass_path, "USERS/UID%d/UID%d_pass.txt", i+1, i+1);
+            pass_file = fopen(file_pass_path, "r");
+            //lê a palavra passe do ficheiro
+            fclose(pass_file);
+        }
+    }
+
+}
+
+int connect_tcp(char* ip, char* port) {
+    int fd,errcode;
+    ssize_t n;
+    struct addrinfo hints, *res;
+
+    fd=socket(AF_INET,SOCK_STREAM,0);
+    if (fd==-1) exit(1); //error
+
+    memset(&hints,0,sizeof hints);
+    hints.ai_family=AF_INET;
+    hints.ai_socktype=SOCK_STREAM;
+    errcode= getaddrinfo(ip, port, &hints,&res);
+    if(errcode!=0)/*error*/exit(1);
+
+    n= connect (fd,res->ai_addr,res->ai_addrlen);
+    if(n==-1)/*error*/exit(1);
+
+    freeaddrinfo(res); 
+
+    return fd;
+
+}
+
+int write_tcp(int fd, char* buffer) {
+    int n = write (fd, buffer, strlen(buffer));
+
+    return n;
+}
+
+char* read_tcp(int fd) {
+    char* buffer = (char*) malloc(sizeof(char) * 128);
+    
+    int n= read (fd,buffer,128);
+    if(n==-1)/*error*/exit(1);
+
+    return buffer;
 }
 
 char* treatMessage(char* message) {
@@ -211,6 +296,7 @@ char* treatMessage(char* message) {
 
     char log[4] = "LOG\0";
     if (strcmp(action, log) == 0) {
+        char* status = loginUser(message, input_index);
         free(action);
         //trata de fazer o Login
     }
@@ -263,7 +349,7 @@ char* receive_message(char* as_port) {
     if (n ==-1) /*error*/ exit(1);
 
     char* buffer = (char*) malloc(sizeof(char) * 128);
-    while(1) {
+    //while(1) {
         addrlen = sizeof(addr);
         n = recvfrom (fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
         if (n == -1) /*error*/exit(1);
@@ -273,7 +359,7 @@ char* receive_message(char* as_port) {
 
         n= sendto (fd, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
         if(n==-1)/*error*/exit(1);
-    }
+   // }
 
     freeaddrinfo(res);
     close (fd);
@@ -344,6 +430,11 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    uid_vector = (char**) malloc(sizeof(char*) * 5);
+    for (int i = 0; i < 5; i++) {
+        uid_vector[i] = (char*) malloc(sizeof(char) * 6);
+    }
+
     //new directory USERS
     struct stat st = {0};
 
@@ -353,10 +444,26 @@ int main(int argc, char **argv) {
 
     receive_message(as_port);
     
+    for (int i = 0; i < 5; i++) {
+        free(uid_vector[i]);
+    }
+    free(uid_vector);
+
+//apaga os ficheiros e diretorios, esta comentado só para conseguir ver se esta a criar bem os diretorios, na versao final vai estar a funcionar
+    for (int i = 0; i < no_users; i++) {
+        char aux[28];
+        sprintf(aux, "USERS/UID%d/UID%d_pass.txt", i + 1, i + 1);
+        remove(aux);
+        sprintf(aux, "USERS/UID%d/UID%d_reg.txt", i + 1, i + 1);
+        remove(aux);
+        sprintf(aux, "USERS/UID%d", i + 1);
+        rmdir(aux);
+    }
 
     if (stat("USERS", &st) == 0) {
         rmdir("USERS");
     }
+    
 
     return 0;
 

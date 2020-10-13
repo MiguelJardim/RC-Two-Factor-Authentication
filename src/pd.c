@@ -8,7 +8,7 @@
 #define FALSE 0
 #define TRUE !(FALSE)
 
-char* read_reg_instruction(char* pd_ip, char* pd_port, char* input) {
+char* read_reg_instruction(char* input, char* pd_ip, char* pd_port) {
 
     int input_index = 0;
 
@@ -16,17 +16,24 @@ char* read_reg_instruction(char* pd_ip, char* pd_port, char* input) {
     char reg[4] = "reg\0";
 
     char* aux = split(input, &input_index, ' ', 4);
-    if (aux == NULL) exit(EXIT_FAILURE);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        return NULL;
+    }
     
     if (strcmp(aux, reg) != 0) {
-        fprintf(stderr, "invalid input\n");
-        exit(EXIT_FAILURE);
+        printf("reg command expected\n");
+        return NULL;
     }
 
     // read ist id
 
     char* uid = split(input, &input_index, ' ', 6);
-    if (uid == NULL) exit(EXIT_FAILURE);
+
+    if (uid == NULL) {
+        printf("invalid uid\n");
+        return NULL;
+    }
 
     if (validate_uid(uid) == -1) {
         printf("invalid uid: %s\n", uid);
@@ -35,7 +42,11 @@ char* read_reg_instruction(char* pd_ip, char* pd_port, char* input) {
 
     // read password
     char* password = split(input, &input_index, '\n', 9);
-    if (password == NULL) exit(EXIT_FAILURE);
+
+    if (password == NULL) {
+        printf("invalid password\n");
+        return NULL;
+    }
 
     if (validate_password(password) == -1) {
         printf("invalid password: %s\n", password);
@@ -46,7 +57,7 @@ char* read_reg_instruction(char* pd_ip, char* pd_port, char* input) {
     char* message = (char*) malloc(sizeof(char) * 45);
 
     if (sprintf(message, "REG %s %s %s %s\n", uid, password, pd_ip, pd_port) < 0) {
-        fprintf(stderr, "ERRO");
+        fprintf(stderr, "sprintf error\n");
         exit(EXIT_FAILURE);
     }
 
@@ -108,32 +119,25 @@ int main(int argc, char **argv) {
         }
     }
 
+    int error = FALSE;
     if (validate_ip(pd_ip) == -1) {
         printf("invalid pd_ip: %s\n", pd_ip);
-        free(pd_ip);
-        free(pd_port);
-        free(as_ip);
-        free(as_port);
-        exit(EXIT_FAILURE);
+        error = TRUE;
     }
     if (as_ip_flag && validate_ip(as_ip) == -1) {
         printf("invalid as_ip: %s\n", as_ip);
-        free(pd_ip);
-        free(pd_port);
-        free(as_ip);
-        free(as_port);
-        exit(EXIT_FAILURE);
+        error = TRUE;
     }
     if (pd_port_flag && validate_port(pd_port) == -1) {
         printf("invalid pd_port: %s\n", pd_port);
-        free(pd_ip);
-        free(pd_port);
-        free(as_ip);
-        free(as_port);
-        exit(EXIT_FAILURE);
+        error = TRUE;
     }
     if (as_port_flag && validate_port(as_port) == -1) {
         printf("invalid as_port: %s\n", as_port);
+        error = TRUE;
+    }
+
+    if (error) {
         free(pd_ip);
         free(pd_port);
         free(as_ip);
@@ -151,15 +155,14 @@ int main(int argc, char **argv) {
     FD_SET(0,&inputs);
     FD_SET(fd_as, &inputs);
 
-    while(1) {
+    while(TRUE) {
         testfds=inputs;
         timeout.tv_sec=10;
         timeout.tv_usec=0;
         out_fds=select(FD_SETSIZE,&testfds,(fd_set *)NULL,(fd_set *)NULL,&timeout);
         switch(out_fds) {
             case 0:
-                printf("Timeout event\n");
-            break;
+                break;
             case -1:
                 perror("select");
                 exit(1);
@@ -168,20 +171,20 @@ int main(int argc, char **argv) {
                     if((n=read(0,in_str,127))!=0) {
                         if(n==-1) exit(1);
                         in_str[n]=0;
-                        char exit_txt[5] = "exit\0";
+
+                        // check if user input is "exit"
+                        char exit_txt[6] = "exit\n\0";
                         if (strcmp(in_str, exit_txt) == 0) {
-                            // free
-                            exit(EXIT_SUCCESS);
-                        }
-                        
-                        char* message = read_reg_instruction(in_str, pd_ip, pd_port);
-                        if (message == NULL) {
                             free(pd_ip);
                             free(pd_port);
                             free(as_ip);
                             free(as_port);
-                            exit(EXIT_FAILURE);
+                            free(in_str);
+                            exit(EXIT_SUCCESS);
                         }
+                        
+                        char* message = read_reg_instruction(in_str, pd_ip, pd_port);
+                        if (message == NULL) break;
 
                         char* answer = send_udp(message, as_ip, as_port);
 
@@ -202,8 +205,11 @@ int main(int argc, char **argv) {
                     socklen_t addrlen=sizeof(addr);
                     n= recvfrom (fd_as,in_str,128,0, (struct sockaddr*)&addr,&addrlen);
                     if(n==-1)/*error*/exit(1);
+
+                    printf("%s", in_str);
                     
                 }
+                break;
         }
     }
     return 0;

@@ -10,6 +10,7 @@
 #include <netdb.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 #define FALSE 0
 #define TRUE 1
@@ -234,12 +235,28 @@ char* loginUser(char* message, int i) {
         if (strcmp(uid_vector[i], u_ist_id) == 0) {
             char file_pass_path[28];
             FILE* pass_file;
+            char p[9];
             sprintf(file_pass_path, "USERS/UID%d/UID%d_pass.txt", i+1, i+1);
             pass_file = fopen(file_pass_path, "r");
-            //lê a palavra passe do ficheiro
+            fscanf(pass_file, "%s", p);
             fclose(pass_file);
+            if (strcmp(password, p) != 0) {
+                free(u_ist_id);
+                free(password);
+                return reg_status;
+            }
+            else {
+                strcpy(reg_status, ok);
+                free(u_ist_id);
+                free(password);
+                return reg_status;
+            }
         }
     }
+    free(u_ist_id);
+    free(password);
+    strcpy(reg_status, err);
+    return reg_status;
 
 }
 
@@ -263,22 +280,36 @@ int connect_tcp(char* ip, char* port) {
     freeaddrinfo(res); 
 
     return fd;
-
 }
 
-int write_tcp(int fd, char* buffer) {
-    int n = write (fd, buffer, strlen(buffer));
+int open_tcp(char* port) {
+    int fd, errcode, newfd;
+    ssize_t n;
+    socklen_t addrlen;
+    struct addrinfo hints,*res;
+    struct sockaddr_in addr;
 
-    return n;
-}
+    fd = socket(AF_INET,SOCK_STREAM,0);
+    if (fd == -1) exit(1); //error
 
-char* read_tcp(int fd) {
-    char* buffer = (char*) malloc(sizeof(char) * 128);
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    errcode = getaddrinfo(NULL, port, &hints, &res);
+    if((errcode) != 0) /*error*/ exit(1);
+
+    n = bind(fd, res->ai_addr, res->ai_addrlen);
+    if(n == -1) /*error*/ exit(1);
+
+    if(listen(fd, 5) == -1) /*error*/ exit(1);
     
-    int n= read (fd,buffer,128);
-    if(n==-1)/*error*/exit(1);
+    addrlen = sizeof(addr);
+    if ((newfd = accept(fd, (struct sockaddr*)&addr, &addrlen)) == -1 ) /*error*/ exit(1);
 
-    return buffer;
+    freeaddrinfo(res);
+    return newfd;
 }
 
 char* treatMessage(char* message) {
@@ -326,48 +357,8 @@ char* treatMessage(char* message) {
     return status;
 }
 
-
-char* receive_message(char* as_port) {
-    int fd, errcode;
-    struct addrinfo hints, *res;
-    ssize_t n;
-    socklen_t addrlen;
-    struct sockaddr_in addr;
-
-    fd = socket(AF_INET,SOCK_DGRAM, 0);
-    if (fd == -1) /*error*/exit(1);
-
-    memset (&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET; // IPv4
-    hints.ai_socktype = SOCK_DGRAM; // UDP socket
-    hints.ai_flags = AI_PASSIVE;
-
-    errcode = getaddrinfo (NULL, as_port, &hints, &res);
-    if (errcode != 0) /*error*/ exit(1);
-
-    n = bind (fd, res->ai_addr, res->ai_addrlen);
-    if (n ==-1) /*error*/ exit(1);
-
-    char* buffer = (char*) malloc(sizeof(char) * 128);
-    //while(1) {
-        addrlen = sizeof(addr);
-        n = recvfrom (fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
-        if (n == -1) /*error*/exit(1);
-        
-        char* answer = treatMessage(buffer);
-        free(buffer);
-
-        n= sendto (fd, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
-        if(n==-1)/*error*/exit(1);
-   // }
-
-    freeaddrinfo(res);
-    close (fd);
-    
-}
-
-void send_message(char* message, char* pd_ip, char* pd_port) {
-    int fd, errcode;
+char* send_udp(char* message, char* ip, char* port) {
+    int fd,errcode;
     ssize_t n;
     socklen_t addrlen;
     struct addrinfo hints,*res;
@@ -381,16 +372,46 @@ void send_message(char* message, char* pd_ip, char* pd_port) {
     hints.ai_family = AF_INET; //IPv4
     hints.ai_socktype = SOCK_DGRAM; //UDP socket
 
-    errcode = getaddrinfo(pd_ip, pd_port, &hints, &res);
+    errcode = getaddrinfo(ip, port, &hints, &res) ;
     if(errcode!=0)  exit(1);
 
     n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
     if(n==-1) exit(1);
 
+    addrlen = sizeof(addr);
+    n = recvfrom (fd, buffer, 128,0, (struct sockaddr*)&addr, &addrlen);
+    if(n == -1) exit(1);
+
     freeaddrinfo(res);
     close (fd);
+
+    return buffer;
 }
 
+int open_udp(char* port) {
+    int fd,errcode;
+    ssize_t n;
+    struct addrinfo hints,*res;
+    
+    fd=socket(AF_INET,SOCK_DGRAM,0);
+    if(fd==-1) /*error*/exit(1);
+
+    memset(&hints,0,sizeof hints);
+    hints.ai_family=AF_INET; // IPv4
+    hints.ai_socktype=SOCK_DGRAM; // UDP socket
+    hints.ai_flags=AI_PASSIVE;
+
+    errcode= getaddrinfo (NULL,port,&hints,&res);
+    if(errcode!=0) /*error*/ exit(1);
+
+    n= bind (fd,res->ai_addr, res->ai_addrlen);
+    if(n==-1) /*error*/ exit(1);
+
+    freeaddrinfo(res);
+    
+    return fd;
+
+}
 
 int main(int argc, char **argv) {
 
@@ -437,13 +458,58 @@ int main(int argc, char **argv) {
 
     //new directory USERS
     struct stat st = {0};
-
     if (stat("USERS", &st) == -1) {
         mkdir("USERS", 0700);
     }
 
-    receive_message(as_port);
+    int fd_pd = open_udp(as_port);
+    int fd_user = open_tcp(as_port);
+    printf("1\n");
+    char* in_str = (char*) malloc(sizeof(char) * 128);
+    fd_set inputs, testfds;
+    struct timeval timeout;
+    int out_fds,n;
+    FD_ZERO(&inputs); 
+    FD_SET(fd_pd, &inputs);
+    FD_SET(fd_user, &inputs);
+    printf("2\n");
+    while(TRUE) {
+        testfds = inputs;
+        timeout.tv_sec = 10;
+        timeout.tv_usec = 0;
+        out_fds = select(FD_SETSIZE, &testfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
+        switch(out_fds) {
+            case 0:
+                break;
+            case -1:
+                perror("select");
+                exit(1);
+            default:
+                if (FD_ISSET(fd_pd, &testfds)) {
+                    printf("read upd\n");
+                    struct sockaddr_in addr;
+                    socklen_t addrlen = sizeof(addr);
+                    ssize_t n;
+                    n = recvfrom (fd_pd, in_str, 128, 0, (struct sockaddr*)&addr, &addrlen);
+                    if (n == -1) /*error*/ break;    
+                    char* answer = treatMessage(in_str);  
+                    n = sendto (fd_pd, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
+                    if (n == -1) /*error*/break;
+                }
+                if (FD_ISSET(fd_user, &testfds)) {
+                    printf("read tcp\n");
+                    ssize_t n;
+                    n = read (fd_user, in_str, 128);
+                    if (n == -1) /*error*/ exit(1);
+                    char* answer = treatMessage(in_str);
+                    n = write (fd_user, answer, n);
+                    if (n == -1) /*error*/ exit(1);
+                }
+                break;
+        }
+    }
     
+
     for (int i = 0; i < 5; i++) {
         free(uid_vector[i]);
     }

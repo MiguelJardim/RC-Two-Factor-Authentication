@@ -15,31 +15,49 @@ typedef struct credentials {
     char* password;
 } *credentials;
 
-enum file_command {L, R, U, D, X};
-
-const char* command_to_string(enum file_command c) {
-    static const char *strings[] = {"list", "retrieve", "upload", "delete", "remove"};
-    return strings[c];
-}
-
 credentials user;
 
-char* read_vlc(char* input) {
+char* command_to_string(char command) {
+    if (command == 'L') return "list\0";
+    else if (command == 'R') return "retrieve\0";
+    else if (command == 'U') return "upload\0";
+    else if (command == 'D') return "delete\0";
+    else if (command == 'X') return "remove\0";
+    else return NULL;
+}
+
+char* unregister(char* as_ip, char* as_port) {
+    char* message = (char*) malloc(sizeof(char) * 20);
+
+    if (sprintf(message, "UNR %s %s\n", user->name, user->password) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+
+    char* answer = send_udp(message, as_ip, as_port);
+    free(message);
+
+    return answer;
+
+}
+
+
+int read_vlc(char* input, char* vlc_out, int* instruction, char* file_name) {
 
     int index = 0;
 
     // read VLC
-    char vlc_str[4] = "vlc\0";
+    char vlc_str[4] = "VLC\0";
 
     char* aux = split(input, &index, ' ', 4);
     if (aux == NULL) {
         free(aux);
-        return NULL;
+        return -1;
     }
 
     if (strcmp(aux, vlc_str) != 0) {
         free(aux);
-        return NULL;
+        return -1;
     }
     free(aux);
 
@@ -47,12 +65,12 @@ char* read_vlc(char* input) {
     char* user_name = split(input, &index, ' ', 6);
 
     if (user_name == NULL) {
-        return NULL;
+        return -2;
     }
 
     if (strcmp(user_name, user->name) != 0) {
         free(user_name);
-        return NULL;
+        return -2;
     }
     free(user_name);
 
@@ -61,41 +79,62 @@ char* read_vlc(char* input) {
 
     if (vlc == NULL) {
         free(vlc);
-        return NULL;       
+        return -2;   
     }
 
+    int out = 0;
     // read operation
     int saved_index = index;
+    
+    char* instruction_read = NULL;
+    char* file_name_read = NULL;
 
-    char* instruction = split(input, &index, ' ', 2);
-    if (instruction == NULL) {
-        char* full_instruction = split(input, &saved_index, '\n', FILE_NAME_SIZE + 3);
-        if (full_instruction == NULL) {
-            free(instruction);
-            free(full_instruction);
-            return NULL;
+    instruction_read = split(input, &index, ' ', 2);
+
+    // commands R, U and D need extra argument
+    if (instruction_read != NULL && (instruction_read[0] == 'R' || instruction_read[0] == 'U' || instruction_read[0] == 'D')) {
+        
+        file_name_read = split(input, &saved_index, '\n', FILE_NAME_SIZE + 1);
+        if (file_name_read == NULL) {
+            free(vlc);
+            free(instruction_read);
+            free(file_name_read);
+            return -2;
         }
-        int index = 0;
-        instruction = split(full_instruction, &index, ' ', 2);
-        if (instruction == NULL) {
-            free(instruction);
-            free(full_instruction);
-            return NULL;
+
+        strcpy(file_name, file_name_read);
+        free(file_name_read);
+        *instruction = instruction_read[0];
+        // instruction with file name
+        out = 1;
+        
+    }
+    else if (instruction_read == NULL) {
+        instruction_read = split(input, &saved_index, '\n', 2);
+        if (instruction_read == NULL) {
+            free(vlc);
+            free(instruction_read);
+            return -2;
         }
-        printf("%s\n", command_to_string(instruction[0]));
-        char* file_name =  split(full_instruction, &index, ' ', FILE_NAME_SIZE + 1);
-        if (file_name == NULL) {
-            free(instruction);
-            free(full_instruction);
-            free(file_name);
-            return NULL;
-        }
+        
+        if ((instruction_read[0] == 'X' || instruction_read[0] == 'L')) {
+            *instruction = instruction_read[0];
+        } 
+    }
+    else {
+        free(instruction_read);
+        return -2;
     }
 
+    strcpy(vlc_out, vlc);
 
+    free(instruction_read);
+    free(vlc);
 
+    return out;
 }
-char* read_reg_instruction(char* input, char* pd_ip, char* pd_port) {
+
+char* read_reg_command(char* input, char* pd_ip, char* pd_port) {
 
     int input_index = 0;
 
@@ -163,6 +202,8 @@ char* read_reg_instruction(char* input, char* pd_ip, char* pd_port) {
     free(aux);
     strcpy(user->name, uid);
     strcpy(user->password, password);
+    free(uid);
+    free(password);
 
     return message;
 }
@@ -250,7 +291,7 @@ int main(int argc, char **argv) {
 
     int fd_as = open_udp(pd_port);
 
-    char* in_str = (char*) malloc(sizeof(char) * 127);
+    char* in_str = (char*) malloc(sizeof(char) * 128);
     fd_set inputs, testfds;
     struct timeval timeout;
     int out_fds,n;
@@ -279,11 +320,24 @@ int main(int argc, char **argv) {
                         // check if user input is "exit"
                         char exit_txt[6] = "exit\n\0";
                         if (strcmp(in_str, exit_txt) == 0) {
+
+                            char expected_message[8] = "RUN OK\n\0";
+                            char* answer = unregister(as_ip, as_port);
+                            if (strcmp(expected_message, answer) == 0) {
+                                printf("unregistration successfull\n");
+                            }
+                            else {
+                                printf("unregistration failed\n");
+                            }
+                            free(answer);
+
                             free(pd_ip);
                             free(pd_port);
                             free(as_ip);
                             free(as_port);
                             free(in_str);
+
+                            close(fd_as);
 
                             free(user->name);
                             free(user->password);
@@ -291,7 +345,7 @@ int main(int argc, char **argv) {
                             exit(EXIT_SUCCESS);
                         }
                         
-                        char* message = read_reg_instruction(in_str, pd_ip, pd_port);
+                        char* message = read_reg_command(in_str, pd_ip, pd_port);
                         if (message == NULL) break;
 
                         char* answer = send_udp(message, as_ip, as_port);
@@ -306,15 +360,46 @@ int main(int argc, char **argv) {
                         }
                         // TODO handle invalid answer
 
+                        free(message);
+                        free(answer);
+
                     }
                 }
                 if (FD_ISSET(fd_as, &testfds)) {
                     struct sockaddr_in addr;
                     socklen_t addrlen=sizeof(addr);
                     n= recvfrom (fd_as,in_str,128,0, (struct sockaddr*)&addr,&addrlen);
-                    if(n==-1) /*error*/ break;        
+                    if(n==-1) /*error*/ break;     
+                    
+                    int instruction = 0; 
+                    char* file_name = (char*) malloc(sizeof(char) * FILE_NAME_SIZE + 1);
+                    char* vlc = (char*) malloc(sizeof(char) * 5);
+                    int out = read_vlc(in_str, vlc, &instruction, file_name);
+                    if (out == 0 && instruction != 0) {
+                        printf("VC=%s, %s\n", vlc, command_to_string(instruction));
+                        free(vlc);
+                        free(file_name);
+                    }
+                    else if (out == 1 && instruction != 0) {
+                        printf("VC=%s, %s: %s\n", vlc, command_to_string(instruction), file_name);
+                        free(vlc);
+                        free(file_name);
+                    }
 
-                    int vlc = read_vlc(in_str);
+                    // not working for some reason
+                    if (out == 0 || out == 1) {
+                        char message[8] = "RVC OK\n\0";
+                        char* answer = send_udp(message, as_ip, as_port);
+                        free(answer);
+                    }
+                    else if (out == -2) {
+                        char message[9] = "RVC NOK\n\0";
+                        char* answer = send_udp(message, as_ip, as_port);
+                        free(answer);
+                    }
+
+
+
 
                 } 
                 break;

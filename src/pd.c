@@ -8,6 +8,93 @@
 #define FALSE 0
 #define TRUE !(FALSE)
 
+#define FILE_NAME_SIZE 24
+
+typedef struct credentials {
+    char* name;
+    char* password;
+} *credentials;
+
+enum file_command {L, R, U, D, X};
+
+const char* command_to_string(enum file_command c) {
+    static const char *strings[] = {"list", "retrieve", "upload", "delete", "remove"};
+    return strings[c];
+}
+
+credentials user;
+
+char* read_vlc(char* input) {
+
+    int index = 0;
+
+    // read VLC
+    char vlc_str[4] = "vlc\0";
+
+    char* aux = split(input, &index, ' ', 4);
+    if (aux == NULL) {
+        free(aux);
+        return NULL;
+    }
+
+    if (strcmp(aux, vlc_str) != 0) {
+        free(aux);
+        return NULL;
+    }
+    free(aux);
+
+    // read user id
+    char* user_name = split(input, &index, ' ', 6);
+
+    if (user_name == NULL) {
+        return NULL;
+    }
+
+    if (strcmp(user_name, user->name) != 0) {
+        free(user_name);
+        return NULL;
+    }
+    free(user_name);
+
+    // read vlc
+    char* vlc = split(input, &index, ' ', 5);
+
+    if (vlc == NULL) {
+        free(vlc);
+        return NULL;       
+    }
+
+    // read operation
+    int saved_index = index;
+
+    char* instruction = split(input, &index, ' ', 2);
+    if (instruction == NULL) {
+        char* full_instruction = split(input, &saved_index, '\n', FILE_NAME_SIZE + 3);
+        if (full_instruction == NULL) {
+            free(instruction);
+            free(full_instruction);
+            return NULL;
+        }
+        int index = 0;
+        instruction = split(full_instruction, &index, ' ', 2);
+        if (instruction == NULL) {
+            free(instruction);
+            free(full_instruction);
+            return NULL;
+        }
+        printf("%s\n", command_to_string(instruction[0]));
+        char* file_name =  split(full_instruction, &index, ' ', FILE_NAME_SIZE + 1);
+        if (file_name == NULL) {
+            free(instruction);
+            free(full_instruction);
+            free(file_name);
+            return NULL;
+        }
+    }
+
+
+
+}
 char* read_reg_instruction(char* input, char* pd_ip, char* pd_port) {
 
     int input_index = 0;
@@ -18,11 +105,13 @@ char* read_reg_instruction(char* input, char* pd_ip, char* pd_port) {
     char* aux = split(input, &input_index, ' ', 4);
     if (aux == NULL) {
         printf("invalid command\n");
+        free(aux);
         return NULL;
     }
     
     if (strcmp(aux, reg) != 0) {
         printf("reg command expected\n");
+        free(aux);
         return NULL;
     }
 
@@ -32,11 +121,15 @@ char* read_reg_instruction(char* input, char* pd_ip, char* pd_port) {
 
     if (uid == NULL) {
         printf("invalid uid\n");
+        free(aux);
+        free(uid);
         return NULL;
     }
 
     if (validate_uid(uid) == -1) {
         printf("invalid uid: %s\n", uid);
+        free(aux);
+        free(uid);
         return NULL;
     }
 
@@ -45,11 +138,17 @@ char* read_reg_instruction(char* input, char* pd_ip, char* pd_port) {
 
     if (password == NULL) {
         printf("invalid password\n");
+        free(aux);
+        free(uid);
+        free(password);
         return NULL;
     }
 
     if (validate_password(password) == -1) {
         printf("invalid password: %s\n", password);
+        free(aux);
+        free(uid);
+        free(password);
         return NULL;
     }
 
@@ -62,8 +161,8 @@ char* read_reg_instruction(char* input, char* pd_ip, char* pd_port) {
     }
 
     free(aux);
-    free(uid);
-    free(password);
+    strcpy(user->name, uid);
+    strcpy(user->password, password);
 
     return message;
 }
@@ -145,6 +244,10 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    user = (credentials) malloc(sizeof(struct credentials));
+    user->name = (char*) malloc(sizeof(char) * 10);
+    user->password = (char*) malloc(sizeof(char) * 9);
+
     int fd_as = open_udp(pd_port);
 
     char* in_str = (char*) malloc(sizeof(char) * 127);
@@ -162,6 +265,7 @@ int main(int argc, char **argv) {
         out_fds=select(FD_SETSIZE,&testfds,(fd_set *)NULL,(fd_set *)NULL,&timeout);
         switch(out_fds) {
             case 0:
+            // timeout
                 break;
             case -1:
                 perror("select");
@@ -180,6 +284,10 @@ int main(int argc, char **argv) {
                             free(as_ip);
                             free(as_port);
                             free(in_str);
+
+                            free(user->name);
+                            free(user->password);
+                            free(user);
                             exit(EXIT_SUCCESS);
                         }
                         
@@ -201,12 +309,13 @@ int main(int argc, char **argv) {
                     }
                 }
                 if (FD_ISSET(fd_as, &testfds)) {
-                    printf("read upd\n");
                     struct sockaddr_in addr;
                     socklen_t addrlen=sizeof(addr);
                     n= recvfrom (fd_as,in_str,128,0, (struct sockaddr*)&addr,&addrlen);
                     if(n==-1) /*error*/ break;        
-                    printf("-%s\n", in_str);      
+
+                    int vlc = read_vlc(in_str);
+
                 } 
                 break;
         }

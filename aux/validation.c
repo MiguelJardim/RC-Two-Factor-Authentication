@@ -99,7 +99,7 @@ int validate_ip(char* ip) {
             return -1;
         }
 
-        c = ip[index++];
+        if (index <= (int) strlen(ip)) c = ip[index++];
 
     }
 

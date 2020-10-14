@@ -283,11 +283,10 @@ int connect_tcp(char* ip, char* port) {
 }
 
 int open_tcp(char* port) {
-    int fd, errcode, newfd;
+    int fd, errcode;
     ssize_t n;
-    socklen_t addrlen;
     struct addrinfo hints,*res;
-    struct sockaddr_in addr;
+    
 
     fd = socket(AF_INET,SOCK_STREAM,0);
     if (fd == -1) exit(1); //error
@@ -304,12 +303,9 @@ int open_tcp(char* port) {
     if(n == -1) /*error*/ exit(1);
 
     if(listen(fd, 5) == -1) /*error*/ exit(1);
-    
-    addrlen = sizeof(addr);
-    if ((newfd = accept(fd, (struct sockaddr*)&addr, &addrlen)) == -1 ) /*error*/ exit(1);
 
     freeaddrinfo(res);
-    return newfd;
+    return fd;
 }
 
 char* treatMessage(char* message) {
@@ -329,6 +325,7 @@ char* treatMessage(char* message) {
     if (strcmp(action, log) == 0) {
         char* status = loginUser(message, input_index);
         free(action);
+        return status;
         //trata de fazer o Login
     }
 
@@ -498,12 +495,17 @@ int main(int argc, char **argv) {
                 }
                 if (FD_ISSET(fd_user, &testfds)) {
                     printf("read tcp\n");
+                    int newfd;
                     ssize_t n;
-                    n = read (fd_user, in_str, 128);
-                    if (n == -1) /*error*/ exit(1);
+                    struct sockaddr_in addr;
+                    socklen_t addrlen;
+                    addrlen = sizeof(addr);
+                    if ((newfd = accept(fd_user, (struct sockaddr*)&addr, &addrlen)) == -1 ) /*error*/ exit(1);
+                    n = read (newfd, in_str, 128);
+                    if (n == -1)  exit(1);
                     char* answer = treatMessage(in_str);
-                    n = write (fd_user, answer, n);
-                    if (n == -1) /*error*/ exit(1);
+                    n = write (newfd, answer, n);
+                    if (n == -1)  exit(1);
                 }
                 break;
         }

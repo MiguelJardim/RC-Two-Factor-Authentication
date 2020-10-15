@@ -389,13 +389,11 @@ int main(int argc, char **argv) {
                     // not working for some reason
                     if (out == 0 || out == 1) {
                         char message[8] = "RVC OK\n\0";
-                        char* answer = send_udp(message, as_ip, as_port);
-                        free(answer);
+                        sendto(fd_as, message, 9, 0, (struct sockaddr*)&addr, addrlen);
                     }
                     else if (out == -2) {
                         char message[9] = "RVC NOK\n\0";
-                        char* answer = send_udp(message, as_ip, as_port);
-                        free(answer);
+                        sendto(fd_as, message, 9, 0, (struct sockaddr*)&addr, addrlen);
                     }
 
 

@@ -1,5 +1,7 @@
 #include "conection.h"
 
+#include "../aux/constants.h"
+
 char* send_udp(char* message, char* ip, char* port) {
     int fd,errcode;
     ssize_t n;
@@ -9,21 +11,21 @@ char* send_udp(char* message, char* ip, char* port) {
     char* buffer = (char*) malloc(sizeof(char) * 128);
 
     fd = socket(AF_INET,SOCK_DGRAM,0); //UDP socket
-    if(fd == -1) exit(1);
+    if(fd == -1) return NULL;
 
     memset(&hints,0,sizeof hints);
     hints.ai_family = AF_INET; //IPv4
     hints.ai_socktype = SOCK_DGRAM; //UDP socket
 
     errcode = getaddrinfo(ip, port, &hints, &res) ;
-    if(errcode!=0)  exit(1);
+    if(errcode!=0)  return NULL;
 
     n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
-    if(n==-1) exit(1);
+    if(n==-1) return NULL;
 
     addrlen = sizeof(addr);
-    n = recvfrom (fd, buffer, 128,0, (struct sockaddr*)&addr, &addrlen);
-    if(n == -1) exit(1);
+    n = recvfrom (fd, buffer, BUFFER_SIZE,0, (struct sockaddr*)&addr, &addrlen);
+    if(n == -1) return NULL;
 
     freeaddrinfo(res);
     close (fd);
@@ -37,7 +39,7 @@ int open_udp(char* port) {
     struct addrinfo hints,*res;
     
     fd=socket(AF_INET,SOCK_DGRAM,0);
-    if(fd==-1) /*error*/exit(1);
+    if(fd==-1) return -1;
 
     memset(&hints,0,sizeof hints);
     hints.ai_family=AF_INET; // IPv4
@@ -45,13 +47,39 @@ int open_udp(char* port) {
     hints.ai_flags=AI_PASSIVE;
 
     errcode= getaddrinfo (NULL,port,&hints,&res);
-    if(errcode!=0) /*error*/ exit(1);
+    if(errcode!=0) return -1;
 
     n= bind (fd,res->ai_addr, res->ai_addrlen);
-    if(n==-1) /*error*/ exit(1);
+    if(n==-1) return -1;
 
     freeaddrinfo(res);
     
     return fd;
 
+}
+
+int open_tcp(char* port) {
+    int fd,errcode;
+    ssize_t n;
+    struct addrinfo hints,*res;
+
+    fd=socket(AF_INET,SOCK_STREAM,0);
+    if (fd==-1) return -1;
+
+    memset(&hints,0,sizeof hints);
+    hints.ai_family=AF_INET;
+    hints.ai_socktype=SOCK_STREAM;
+    hints.ai_flags=AI_PASSIVE;
+
+    errcode=getaddrinfo(NULL,port,&hints,&res);
+    if((errcode)!=0) return -1;
+
+    n=bind(fd,res->ai_addr,res->ai_addrlen);
+    if(n==-1) return -1;
+
+    if(listen(fd,MAX_USERS)==-1) return -1;
+
+    freeaddrinfo(res);
+
+    return fd;
 }

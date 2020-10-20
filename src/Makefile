@@ -5,10 +5,13 @@ CFLAGS =-g -Wall -Wextra -I../
 # https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
 .PHONY: all clean run
 
-all: pd
+all: pd fs
 
 pd: pd.c ../aux/validation.c ../aux/conection.c
 	$(CC) $(CFLAGS) pd.c -o pd ../aux/validation.c ../aux/conection.c
+
+fs: fs.c ../aux/validation.c ../aux/conection.c
+	$(CC) $(CFLAGS) fs.c -o fs ../aux/validation.c ../aux/conection.c
 
 clean:
 	@echo Cleaning...

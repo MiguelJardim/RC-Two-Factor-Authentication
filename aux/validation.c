@@ -1,4 +1,5 @@
 #include "validation.h"
+#include "constants.h"
 
 char* split(char* input, int* index, char separator, int size) {
     char* output = (char*) malloc(sizeof(char) * size);
@@ -25,10 +26,10 @@ char* split(char* input, int* index, char separator, int size) {
 }
 
 int validate_uid(char* uid) {
-    if (strlen(uid) != 5) return -1;
+    if (strlen(uid) != UID_SIZE) return -1;
     else if (uid[0] == '0') return -1;
 
-    for (int i = 1; i < 5; i++) {
+    for (int i = 1; i < UID_SIZE; i++) {
         if (uid[i] < '0' || uid[i] > '9') return -1;
     }
 
@@ -36,9 +37,9 @@ int validate_uid(char* uid) {
 }
 
 int validate_password(char* password) {
-    if (strlen(password) != 8) return -1;
+    if (strlen(password) != PASSWORD_SIZE) return -1;
     
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < PASSWORD_SIZE; i++) {
         if (!((password[i] >= '0' && password[i] <= '9') || (password[i] >= 'a' && password[i] <= 'z') || (password[i] >= 'A' && password[i] <= 'Z'))) return -1;
     }
 
@@ -46,9 +47,9 @@ int validate_password(char* password) {
 }
 
 int validate_ip(char* ip) {
-    if (strlen(ip) < 7 || strlen(ip) > 15) return -1;
+    if (strlen(ip) < 7 || strlen(ip) > IP_MAX_SIZE) return -1;
 
-    char* validated_ip = (char*) malloc(sizeof(char) * 16);
+    char* validated_ip = (char*) malloc(sizeof(char) * (IP_MAX_SIZE + 1));
     int index = 0;
     int validated_index = 0;
     char c = ip[index++];
@@ -110,7 +111,7 @@ int validate_ip(char* ip) {
 }
 
 int validate_port(char* port) {
-    if (strlen(port) != 5) return -1;
+    if (strlen(port) != PORT_SIZE) return -1;
 
     for (int i = 0; i < 5; i++) {
         if (port[i] < '0' || port[i] >'9') return -1;

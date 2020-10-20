@@ -4,11 +4,7 @@
 
 #include "../aux/validation.h"
 #include "../aux/conection.h"
-
-#define FALSE 0
-#define TRUE !(FALSE)
-
-#define FILE_NAME_SIZE 24
+#include "../aux/constants.h"
 
 typedef struct credentials {
     char* name;
@@ -62,7 +58,7 @@ int read_vlc(char* input, char* vlc_out, int* instruction, char* file_name) {
     free(aux);
 
     // read user id
-    char* user_name = split(input, &index, ' ', 6);
+    char* user_name = split(input, &index, ' ', (UID_SIZE + 1));
 
     if (user_name == NULL) {
         return -2;
@@ -75,7 +71,7 @@ int read_vlc(char* input, char* vlc_out, int* instruction, char* file_name) {
     free(user_name);
 
     // read vlc
-    char* vlc = split(input, &index, ' ', 5);
+    char* vlc = split(input, &index, ' ', VLC_SIZE + 1);
 
     if (vlc == NULL) {
         free(vlc);
@@ -156,7 +152,7 @@ char* read_reg_command(char* input, char* pd_ip, char* pd_port) {
 
     // read ist id
 
-    char* uid = split(input, &input_index, ' ', 6);
+    char* uid = split(input, &input_index, ' ', UID_SIZE + 1);
 
     if (uid == NULL) {
         printf("invalid uid\n");
@@ -173,7 +169,7 @@ char* read_reg_command(char* input, char* pd_ip, char* pd_port) {
     }
 
     // read password
-    char* password = split(input, &input_index, '\n', 9);
+    char* password = split(input, &input_index, '\n', PASSWORD_SIZE + 1);
 
     if (password == NULL) {
         printf("invalid password\n");
@@ -217,13 +213,13 @@ int main(int argc, char **argv) {
 
     int as_ip_flag = FALSE, pd_port_flag = FALSE, as_port_flag = FALSE;
 
-    char* pd_ip = (char*) malloc(sizeof(char) * 16);
+    char* pd_ip = (char*) malloc(sizeof(char) * IP_MAX_SIZE + 1);
     strcpy(pd_ip, argv[1]);
 
-    char* pd_port = (char*) malloc(sizeof(char) * 6);
+    char* pd_port = (char*) malloc(sizeof(char) * PORT_SIZE + 1);
 
-    char* as_ip = (char*) malloc(sizeof(char) * 16);
-    char* as_port = (char*) malloc(sizeof(char) * 6);
+    char* as_ip = (char*) malloc(sizeof(char) * IP_MAX_SIZE + 1);
+    char* as_port = (char*) malloc(sizeof(char) * PORT_SIZE + 1);
 
     char c;
     while ((c = getopt (argc, argv, "d:n:p:")) != -1) {
@@ -247,16 +243,10 @@ int main(int argc, char **argv) {
     
     if (!as_ip_flag) strcpy(as_ip, pd_ip);
     if (!pd_port_flag) {
-        if (sprintf(pd_port, "57047") < 0) {
-            fprintf(stderr, "ERRO");
-            exit(EXIT_FAILURE);
-        }
+        strcpy(pd_port, PD_PORT);
     }
     if (!as_port_flag) {
-        if (sprintf(as_port, "58047") < 0) {
-            fprintf(stderr, "ERRO");
-            exit(EXIT_FAILURE);
-        }
+        strcpy(pd_port, AS_PORT);
     }
 
     int error = FALSE;
@@ -286,12 +276,12 @@ int main(int argc, char **argv) {
     }
 
     user = (credentials) malloc(sizeof(struct credentials));
-    user->name = (char*) malloc(sizeof(char) * 10);
-    user->password = (char*) malloc(sizeof(char) * 9);
+    user->name = (char*) malloc(sizeof(char) * UID_SIZE + 1);
+    user->password = (char*) malloc(sizeof(char) * PASSWORD_SIZE + 1);
 
     int fd_as = open_udp(pd_port);
 
-    char* in_str = (char*) malloc(sizeof(char) * 128);
+    char* in_str = (char*) malloc(sizeof(char) * BUFFER_SIZE);
     fd_set inputs, testfds;
     struct timeval timeout;
     int out_fds,n;
@@ -368,12 +358,12 @@ int main(int argc, char **argv) {
                 if (FD_ISSET(fd_as, &testfds)) {
                     struct sockaddr_in addr;
                     socklen_t addrlen=sizeof(addr);
-                    n= recvfrom (fd_as,in_str,128,0, (struct sockaddr*)&addr,&addrlen);
+                    n= recvfrom (fd_as,in_str,BUFFER_SIZE,0, (struct sockaddr*)&addr,&addrlen);
                     if(n==-1) /*error*/ break;     
                     
                     int instruction = 0; 
-                    char* file_name = (char*) malloc(sizeof(char) * FILE_NAME_SIZE + 1);
-                    char* vlc = (char*) malloc(sizeof(char) * 5);
+                    char* file_name = (char*) malloc(sizeof(char) * (FILE_NAME_SIZE + 1));
+                    char* vlc = (char*) malloc(sizeof(char) * VLC_SIZE + 1);
                     int out = read_vlc(in_str, vlc, &instruction, file_name);
                     if (out == 0 && instruction != 0) {
                         printf("VC=%s, %s\n", vlc, command_to_string(instruction));

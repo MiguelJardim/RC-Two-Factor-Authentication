@@ -9,154 +9,199 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-#define FALSE 0
-#define TRUE !(FALSE)
+#include "../aux/validation.h"
+#include "../aux/conection.h"
+#include "../aux/constants.h"
 
-#define AS_PORT "58011"
-#define AS_IP "193.136.138.142"
+int list(int fd, char* request_message) {
+    int index = 4;
+    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
+    char* tid = split(request_message, &index, '\n', TID_SIZE + 1);
+    if (!uid || !tid) return -1;
 
-char* split(char* input, int* index, char separator, int size) {
-    char* output = (char*) malloc(sizeof(char) * size);
-    int output_index = 0;
+    char* message = (char*) malloc(sizeof(char) * (4 + UID_SIZE + 1 + TID_SIZE + 1));
+    sprintf(message, "VLD %s %s\n", uid, tid);
+    
+    char* answer = send_udp(message, AS_IP, AS_PORT);
+    printf("answer: %s\n", answer);
 
-    char c = input[(*index)++];
-    if (c == separator) {
-        free(output);
-        return NULL;
-    }
+    printf("list, uid:%s, tid:%s.\n", uid, tid);
+    return 0;
 
-    while (c != separator && c != EOF) {
-        if (output_index == size - 1) {
-            free(output);
-            return NULL;
-        }
-        output[output_index++] = c;
-        c = input[(*index)++];
-    }
-
-    output[output_index] = '\0';
-
-    return output;
 }
 
-int validate_port(char* port) {
-    if (strlen(port) != 5) return -1;
+int retrieve(int fd, char* request_message) {
+    int index = 4;
+    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
+    char* tid = split(request_message, &index, ' ', TID_SIZE + 1);
+    char* fname = split(request_message, &index, '\n', FILE_NAME_SIZE);
+    if (!uid|| !tid || !fname) return -1;
 
-    for (int i = 0; i < 5; i++) {
-        if (port[i] < '0' || port[i] >'9') return -1;
-    }
-    if (port[0] == '0') return -1;
+    // printf("retrieve, uid:%s, tid:%s, fname:%s.\n", uid, tid, fname);
     return 0;
 }
 
-char* send_udp(char* message, char* dest_ip, char* dest_port) {
-    int fd,errcode;
-    ssize_t n;
-    socklen_t addrlen;
-    struct addrinfo hints,*res;
-    struct sockaddr_in addr;
-    char* buffer = (char*) malloc(sizeof(char) * 128);
+int upload(int fd, char* request_message) {
+    int index = 4;
+    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
+    char* tid = split(request_message, &index, ' ', TID_SIZE + 1);
+    char* fname = split(request_message, &index, ' ', FILE_NAME_SIZE);
+    char* size = split(request_message, &index, ' ', 3);
+    char* data = split(request_message, &index, '\n', FILE_SIZE);
+    if (!uid|| !tid || !fname || !size || !data) return -1;
 
-    fd = socket(AF_INET,SOCK_DGRAM,0); //UDP socket
-    if(fd == -1) exit(1);
-
-    memset(&hints,0,sizeof hints);
-    hints.ai_family = AF_INET; //IPv4
-    hints.ai_socktype = SOCK_DGRAM; //UDP socket
-
-    errcode = getaddrinfo(dest_ip, dest_port, &hints, &res) ;
-    if(errcode!=0)  exit(1);
-
-    n = sendto(fd, message, strlen(message) + 1, 0, res->ai_addr, res->ai_addrlen);
-    if(n==-1) exit(1);
-
-    addrlen = sizeof(addr);
-    n = recvfrom (fd, buffer, 128,0, (struct sockaddr*)&addr, &addrlen);
-    if(n == -1) exit(1);
-
-    freeaddrinfo(res);
-    close (fd);
-
-    return buffer;
+    // printf("upload, uid:%s, tid:%s, fname:%s, size:%s, data:%s.\n", uid, tid, fname, size, data);
+    return 0;
 }
 
-char tcp(char* fs_port) {
-    int fd,errcode, newfd;
-    ssize_t n;
-    socklen_t addrlen;
-    struct addrinfo hints,*res;
-    struct sockaddr_in addr;
-    char buffer[128];
+int delete(int fd, char* request_message) {
+    int index = 4;
+    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
+    char* tid = split(request_message, &index, ' ', TID_SIZE + 1);
+    char* fname = split(request_message, &index, '\n', FILE_NAME_SIZE);
+    if (!uid|| !tid || !fname) return -1;
 
-    fd = socket(AF_INET,SOCK_STREAM,0);
-    if (fd == -1) exit(1); //error
-
-    memset(&hints,0,sizeof hints);
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    errcode=getaddrinfo(NULL, fs_port, &hints, &res);
-    if((errcode)!= 0)/*error*/exit(1);
-
-    n = bind(fd,res->ai_addr,res->ai_addrlen);
-    if(n == -1) /*error*/ exit(1);
-
-    if(listen(fd,5) == -1)/*error*/exit(1);
-
-    while(1) {
-        addrlen=sizeof(addr);
-        if ((newfd=accept(fd,(struct sockaddr*)&addr, &addrlen)) == -1 )/*error*/ exit(1);
-
-        n = read (newfd,buffer,128);
-        if(n == - 1)/*error*/exit(1);
-
-        write(1,"received: ",10);write(1,buffer,n);
-
-        n = write(newfd,buffer,n);
-        if(n == -1)/*error*/exit(1);
-
-        close(newfd);
-    }
-
-    freeaddrinfo(res);
-    close (fd);
-
-
+    // printf("delete, uid:%s, tid:%s, fname:%s.\n", uid, tid, fname);
     return 0;
+}
+
+int remove_all(int fd, char* request_message) {
+    int index = 4;
+    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
+    char* tid = split(request_message, &index, '\n', TID_SIZE + 1);
+    if (!uid || !tid) return -1;
+
+    // printf("remove, uid:%s, tid:%s.\n", uid, tid);
+    return 0;
+}
+
+int parse_user_request(int fd, char* request_message) {
+    int index = 0;
+    char* request_type = split(request_message, &index, ' ', 4);
+    if (request_type == NULL) return -1;
+
+    char lst[4] = "LST\0";
+    char rtv[4] = "RTV\0";
+    char upl[4] = "UPL\0";
+    char del[4] = "DEL\0";
+    char rem[4] = "REM\0";
+
+    if (strcmp(lst, request_type) == 0) return list(fd, request_message);
+    else if (strcmp(rtv, request_type) == 0) return retrieve(fd, request_message);
+    else if (strcmp(upl, request_type) == 0) return upload(fd, request_message);
+    else if (strcmp(del, request_type) == 0) return delete(fd, request_message);
+    else if (strcmp(rem, request_type) == 0) return remove_all(fd, request_message);
+    else return -1;
 }
 
 
 int main(int argc, char **argv) {
 
-    if (argc < 2 || argc > 3) {
+    if (argc < 1 || argc > 4) {
         fprintf(stderr, "usage: %s file", argv[0]);
         exit(EXIT_FAILURE);
     }
 
-    char* fs_port = (char*) malloc(sizeof(char) * 6);
-    int verbose;
+    char* fs_port = (char*) malloc(sizeof(char) * (PORT_SIZE + 1));
+    int verbose = FALSE;
+    int port_flag = FALSE;
 
     int c;
     while ((c = getopt (argc, argv, "p:v")) != -1) {
         switch (c) {
         case 'p':
+            port_flag = TRUE;
             strcpy(fs_port, optarg);
             break;
         case 'v':
             verbose = TRUE;
             break;
         default:
+            fprintf(stderr, "invalid comand line arguments");
             exit(EXIT_FAILURE);
         }
     }
 
+    if (!port_flag) {
+        strcpy(fs_port, FS_PORT);
+    }
     if (validate_port(fs_port) == -1) {
         printf("invalid fs_port: %s\n", fs_port);
         free(fs_port);
         exit(EXIT_FAILURE);
     }
 
+    // open comunication sockets for as and users
+    // TODO handle error (-1)
+    int fd_as = open_udp(fs_port);
+    int fd_user = open_tcp(fs_port);
+    if (fd_as == -1 || fd_user == -1) {
+        printf("can't create socket\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // vector with current users fd's
+    int* users = (int*) malloc(sizeof(int) * MAX_USERS);
+    for (int i = 0; i < MAX_USERS; i++) {
+        users[i] = -1;
+    }
+
+    socklen_t addrlen;
+    struct sockaddr_in addr;
+
+    char* in_str = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    fd_set inputs, testfds;
+    struct timeval timeout;
+    int out_fds,n;
+    FD_ZERO(&inputs); 
+    FD_SET(fd_as, &inputs);
+    FD_SET(fd_user, &inputs);
+    while(TRUE) {
+        testfds=inputs;
+        timeout.tv_sec=10;
+        timeout.tv_usec=0;
+        out_fds=select(FD_SETSIZE,&testfds,(fd_set *)NULL,(fd_set *)NULL,&timeout);
+        switch(out_fds) {
+            case 0:
+            // timeout
+                break;
+            case -1:
+                perror("select");
+                exit(1);
+            default:
+                // tcp connection from a new user
+                if(FD_ISSET(fd_user,&testfds)) {
+                    int newfd;
+                    addrlen=sizeof(addr);
+                    if ((newfd=accept(fd_user,(struct sockaddr*)&addr, &addrlen))==-1 )/*error*/ exit(1);
+                    // TODO lack of space for new users
+                    // add new user to user list
+                    for (int i = 0; i < MAX_USERS; i++) {
+                        if (users[i] == -1) {
+                            // printf("added user\n");
+                            users[i] = newfd;
+                            FD_SET(users[i], &inputs);
+                            break;
+                        }
+                    }
+
+                }
+                // check if any active users sent a request
+                for (int i = 0; i < MAX_USERS; i++) {
+                    if (users[i] != -1 && FD_ISSET(users[i], &testfds)) {
+                        // printf("user request\n");
+                        n = read (users[i], in_str, BUFFER_SIZE);
+                        if(n == -1) exit(EXIT_FAILURE);
+
+                        // TODO handle invalid request
+                        int res = parse_user_request(users[i], in_str);
+                    }
+                }
+                
+                break;
+        }
+        
+    }
 
     return 0;
 }

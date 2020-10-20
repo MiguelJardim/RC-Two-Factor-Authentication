@@ -14,5 +14,6 @@
 
 char* send_udp(char* message, char* ip, char* port);
 int open_udp(char* port);
+int open_tcp(char* port);
 
 #endif

@@ -13,6 +13,31 @@
 #define TRUE !(FALSE)
 #define SIZE 30
 
+char* TID;
+char* UID;
+char* RID;
+
+int validate_port(char* port) {
+    if (strlen(port) != 5) return -1;
+
+    for (int i = 0; i < 5; i++) {
+        if (port[i] < '0' || port[i] >'9') return -1;
+    }
+    if (port[0] == '0') return -1;
+    return 0;
+}
+
+int validate_password(char* password) {
+    if (strlen(password) != 8) return -1;
+    
+    for (int i = 0; i < 8; i++) {
+        if (!((password[i] >= '0' && password[i] <= '9') ||
+            (password[i] >= 'a' && password[i] <= 'z') ||
+            (password[i] >= 'A' && password[i] <= 'Z'))) return -1;
+    }
+
+    return 0;
+}
 
 char* split(char* input, int* index, char separator, int size) {
     char* output = (char*) malloc(sizeof(char) * size);
@@ -49,15 +74,6 @@ int validate_uid(char* uid) {
     return 0;
 }
 
-int validate_password(char* password) {
-    if (strlen(password) != 8) return -1;
-    
-    for (int i = 0; i < 8; i++) {
-        if (!((password[i] >= '0' && password[i] <= '9') || (password[i] >= 'a' && password[i] <= 'z') || (password[i] >= 'A' && password[i] <= 'Z'))) return -1;
-    }
-
-    return 0;
-}
 
 int validate_ip(char* ip) {
     if (strlen(ip) < 7 || strlen(ip) > 15) return -1;
@@ -104,15 +120,6 @@ int validate_ip(char* ip) {
     return 0;
 }
 
-int validate_port(char* port) {
-    if (strlen(port) != 5) return -1;
-
-    for (int i = 0; i < 5; i++) {
-        if (port[i] < '0' || port[i] >'9') return -1;
-    }
-    if (port[0] == '0') return -1;
-    return 0;
-}
 
 int connect_tcp(char* ip, char* port) {
     int fd,errcode;
@@ -152,6 +159,312 @@ char* read_tcp(int fd) {
     return buffer;
 }
 
+
+char* login_command(char* input) {
+
+    int input_index = 0;    
+    // read login
+    char login[6] = "login\0";
+    char* aux = split(input, &input_index, ' ', 6);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        free(aux);
+        return NULL;
+    }
+    if (strcmp(aux, login) != 0) {
+        printf("login command expected\n");
+        free(aux);
+        return NULL;
+    }
+    // read ist id
+    char* uid = split(input, &input_index, ' ', 6);
+    if (uid == NULL) {
+        printf("invalid uid\n");
+        free(aux);
+        free(uid);
+        return NULL;
+    }
+    if (validate_uid(uid) == -1) {
+        printf("invalid uid: %s\n", uid);
+        free(aux);
+        free(uid);
+        return NULL;
+    }
+    // read password
+    char* password = split(input, &input_index, '\n', 9);
+    if (password == NULL) {
+        printf("invalid password\n");
+        free(aux);
+        free(uid);
+        free(password);
+        return NULL;
+    }
+    if (validate_password(password) == -1) {
+        printf("invalid password: %s\n", password);
+        free(aux);
+        free(uid);
+        free(password);
+        return NULL;
+    }
+    // LOG UID pass
+    char* message = (char*) malloc(sizeof(char) * 45);
+    if (sprintf(message, "LOG %s %s\n", uid, password) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+    free(aux);
+    free(uid);
+    free(password);
+    return message;
+}
+
+char* val_command(char* input, char* uid, char* rid) {
+
+    int input_index = 0;
+    // read val
+    char val[4] = "val\0";
+    char* aux = split(input, &input_index, ' ', 4);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        free(aux);
+        return NULL;
+    }    
+    if (strcmp(aux, val) != 0) {
+        printf("val command expected\n");
+        free(aux);
+        return NULL;
+    }
+    // read VC
+    char* vc = split(input, &input_index, ' ', 5);
+    if (vc == NULL) {
+        printf("invalid vc\n");
+        free(aux);
+        free(vc);
+        return NULL;
+    }
+    // AUT UID RID VC
+    char* message = (char*) malloc(sizeof(char) * 45);
+    if (sprintf(message, "AUT %s %s %s\n",uid, rid, vc) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+    free(aux);
+    free(vc);
+    return message;
+}
+
+char* list_command(char* input, char* uid, char* tid) {
+
+    int input_index = 0;
+    // read list or l
+    char list[5] = "list\0", l[2] = "l\0";
+    char* aux = split(input, &input_index, ' ', 5);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        free(aux);
+        return NULL;
+    }    
+    if ((strcmp(aux, list) != 0)||(strcmp(aux, l) != 0)) {
+        printf("list or l command expected\n");
+        free(aux);
+        return NULL;
+    }
+    // LST UID TID
+    char* message = (char*) malloc(sizeof(char) * 45);
+    if (sprintf(message, "LST %s %s\n", uid, tid) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+    free(aux);
+
+    return message;
+}
+
+char* retrieve_command(char* input, char* uid, char* tid) {
+
+    int input_index = 0;
+    // read retrieve
+    char retrieve[9] = "retrieve\0";
+    char r[2] = "l\0";
+    char* aux = split(input, &input_index, ' ', 9);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        free(aux);
+        return NULL;
+    }
+    if ((strcmp(aux, retrieve) != 0)||(strcmp(aux, r) != 0)) {
+        printf("retrieve or r command expected\n");
+        free(aux);
+        return NULL;
+    }
+    char* filename = split(input, &input_index, ' ', 20);
+    if (filename == NULL) {
+        printf("invalid file name\n");
+        free(aux);
+        free(filename);
+        return NULL;
+    }
+    // RTV UID TID Fname
+    char* message = (char*) malloc(sizeof(char) * 45);
+    if (sprintf(message, "RTV %s %s %s\n", uid, tid, filename) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+    free(filename);
+    free(aux);
+    return message;
+}
+
+char* upload_command(char* input, char* uid, char* tid) {
+
+    int input_index = 0;
+    // read upload
+    char upload[7] = "upload\0";
+    char u[2] = "l\0";
+    char* aux = split(input, &input_index, ' ', 7);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        free(aux);
+        return NULL;
+    }    
+    if ((strcmp(aux, upload) != 0)||(strcmp(aux, u) != 0)) {
+        printf("upload or u command expected\n");
+        free(aux);
+        return NULL;
+    }
+    char* filename = split(input, &input_index, ' ', 20);
+    if (filename == NULL) {
+        printf("invalid file name\n");
+        free(aux);
+        free(filename);
+        return NULL;
+    }
+    // UPL UID TID Fname Fsize data
+    char* message = (char*) malloc(sizeof(char) * 45);
+    if (sprintf(message, "UPL %s %s %s\n", uid, tid, filename) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+    free(filename);
+    free(aux);
+    return message;
+}
+
+char* delete_command(char* input, char* uid, char* tid) {
+
+    int input_index = 0;
+
+    // read delete
+    char delete[7] = "delete\0", d[2] = "l\0";
+    char* aux = split(input, &input_index, ' ', 7);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        free(aux);
+        return NULL;
+    }
+    if ((strcmp(aux, delete) != 0)||(strcmp(aux, d) != 0)) {
+        printf("upload or u command expected\n");
+        free(aux);
+        return NULL;
+    }
+    char* filename = split(input, &input_index, ' ', 20);
+    if (filename == NULL) {
+        printf("invalid filename\n");
+        free(aux);
+        free(filename);
+        return NULL;
+    }
+    // DEL UID TID Fname
+    char* message = (char*) malloc(sizeof(char) * 45);
+    if (sprintf(message, "DEL %s %s %s\n", uid, tid, filename) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+    free(filename);
+    free(aux);
+    return message;
+}
+
+char* req_command(char* input, char* uid, char* rid) {
+
+    int input_index = 0;
+    // read req
+    char req[4] = "req\0";
+    char L[2] = "L\0", R[2] = "R\0", U[2] = "U\0", D[2] = "D\0", X[2] = "X\0"; 
+    char* aux = split(input, &input_index, ' ', 4);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        free(aux);
+        return NULL;
+    }
+    if ((strcmp(aux, req) != 0)) {
+        printf("req command expected\n");
+        free(aux);
+        return NULL;
+    }
+    //(either L, R, U, D or X)
+    char* fop = split(input, &input_index, ' ', 2);
+    if (fop == NULL) {
+        printf("invalid file operation\n");
+        free(aux);
+        free(fop);
+        return NULL;
+    }
+    if ((strcmp(fop, L) != 0)||(strcmp(fop, R) != 0)||
+        (strcmp(fop, U) != 0)||(strcmp(fop, D) != 0)||(strcmp(fop, X) != 0)) {
+        printf("L, R, U, D or X expected\n");
+        free(aux);
+        free(fop);
+        return NULL;
+    }
+    char* filename = split(input, &input_index, ' ', 20);
+    if (filename == NULL) {
+        printf("invalid filename\n");
+        free(aux);
+        free(fop);
+        free(filename);
+        return NULL;
+    }
+    // REQ UID RID Fop Fname
+    char* message = (char*) malloc(sizeof(char) * 45);
+    if (sprintf(message, "REQ %s %s %s %s\n", uid, rid, fop, filename) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+    free(aux);
+    free(fop);
+    free(filename);
+    return message;
+}
+
+char* remove_command(char* input, char* uid, char* tid) {
+
+    int input_index = 0;
+    // read remove
+    char remove[7] = "remove\0";
+    char x[2] = "x\0";
+
+    char* aux = split(input, &input_index, ' ', 7);
+    if (aux == NULL) {
+        printf("invalid command\n");
+        free(aux);
+        return NULL;
+    }    
+    if ((strcmp(aux, remove) != 0)||(strcmp(aux, x) != 0)) {
+        printf("upload or u command expected\n");
+        free(aux);
+        return NULL;
+    }
+    // REM UID TID
+    char* message = (char*) malloc(sizeof(char) * 45);
+
+    if (sprintf(message, "DEL %s %s\n", uid, tid) < 0) {
+        fprintf(stderr, "sprintf error\n");
+        exit(EXIT_FAILURE);
+    }
+    free(aux);
+    return message;
+}
 
 int main(int argc, char **argv) {
     // ./user[-n ASIP] [-p ASport] [-m FSIP] [-q FSport]
@@ -245,7 +558,12 @@ int main(int argc, char **argv) {
     
 
     // printf("%s %s %s %s\n", as_ip, as_port, fs_ip, fs_port);
+/*
 
+    char* message = read_reg_command(in_str, pd_ip, pd_port);
+    if (message == NULL) break;
+
+*/
     char buffer[128] = "LOG 92528 password\n\0";
     char* output;
 

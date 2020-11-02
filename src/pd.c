@@ -378,17 +378,22 @@ int main(int argc, char **argv) {
 
                     // not working for some reason
                     if (out == 0 || out == 1) {
-                        char message[8] = "RVC OK\n\0";
-                        sendto(fd_as, message, 9, 0, (struct sockaddr*)&addr, addrlen);
+                        char* message = (char*) malloc(sizeof(char) * (UID_SIZE + 9));
+                        if (sprintf(message, "RVC %s OK\n", user->name) < 0) {
+                            fprintf(stderr, "sprintf error\n");
+                            exit(EXIT_FAILURE);
+                        }
+                        
+                        sendto(fd_as, message, UID_SIZE + 9, 0, (struct sockaddr*)&addr, addrlen);
                     }
                     else if (out == -2) {
-                        char message[9] = "RVC NOK\n\0";
-                        sendto(fd_as, message, 9, 0, (struct sockaddr*)&addr, addrlen);
+                        char* message = (char*) malloc(sizeof(char) * (UID_SIZE + 9));
+                        if (sprintf(message, "RVC %s NOK\n", user->name) < 0) {
+                            fprintf(stderr, "sprintf error\n");
+                            exit(EXIT_FAILURE);
+                        }
+                        sendto(fd_as, message, UID_SIZE + 9, 0, (struct sockaddr*)&addr, addrlen);
                     }
-
-
-
-
                 } 
                 break;
         }

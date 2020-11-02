@@ -8,24 +8,109 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "../aux/validation.h"
 #include "../aux/conection.h"
 #include "../aux/constants.h"
+
+int verbose = FALSE;
+
+int list_directory(char *dirname) {
+     
+    DIR *d;     
+    struct dirent *dir;     
+    d=opendir(dirname);     
+    if(d) {         
+        while((dir=readdir(d)) !=NULL) {             
+            printf("FILE: %s\n", dir->d_name);         
+        }         
+        closedir(d);         
+        return(1);     
+    }     
+    else return(-1); 
+} 
+
+int validate_request(char* uid, char* tid, char fop, char* fname) {
+    char* message = (char*) malloc(sizeof(char) * (4 + UID_SIZE + 1 + TID_SIZE + 2));
+    sprintf(message, "VLD %s %s\n", uid, tid);
+    
+    char* answer = send_udp(message, AS_IP, AS_PORT);
+    free(message);
+
+    int index = 0;
+
+    char cnf[4] = "CNF\0";
+    char* type = split(answer, &index, ' ', 4);
+    if (strcmp(cnf, type) != 0) {
+        free(answer);
+        free(type);
+        return -1;
+    }
+    free(type);
+
+    char* answer_uid = split(answer, &index, ' ', 6);
+    if (strcmp(answer_uid, uid) != 0) {
+        free(answer);
+        free(answer_uid);
+        return -1;
+    }
+    free(answer_uid);
+
+    char* answer_tid = split(answer, &index, ' ', 5);
+    if (strcmp(answer_tid, tid) != 0) {
+        free(answer);
+        free(answer_tid);
+        return -1;
+    }
+    free(answer_tid);
+
+    int saved = index;
+    char* received_fop = split(answer, &index, ' ', 2);
+    if (received_fop == NULL) {
+        received_fop = split(answer, &saved, '\n', 2);
+        if (received_fop == NULL || received_fop[0] == 'E' || received_fop[0] != fop) {
+            free(answer);
+            free(received_fop);
+            return -1;
+        }
+
+        char* name = split(answer, &index, '\n', FILE_NAME_SIZE + 1);
+        if ((fname == NULL && name != NULL) || name == NULL || strcmp(name, fname) != 0) {
+            free(received_fop);
+            free(name);
+            free(answer);
+            return -1;
+        }
+        free(name);
+    }
+    
+    if (received_fop[0] == 'E' || received_fop[0] != fop) {
+        free(received_fop);
+        free(answer);
+        return -1;
+    }
+    free(received_fop);
+    free(answer);
+
+    return 0;
+}
 
 int list(int fd, char* request_message) {
     int index = 4;
     char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
     char* tid = split(request_message, &index, '\n', TID_SIZE + 1);
     if (!uid || !tid) return -1;
+    // printf("list, uid:%s, tid:%s.\n", uid, tid);
 
-    char* message = (char*) malloc(sizeof(char) * (4 + UID_SIZE + 1 + TID_SIZE + 1));
+    // validate the operation with the AS
+    char* message = (char*) malloc(sizeof(char) * (4 + UID_SIZE + 1 + TID_SIZE + 2));
     sprintf(message, "VLD %s %s\n", uid, tid);
     
-    char* answer = send_udp(message, AS_IP, AS_PORT);
-    printf("answer: %s\n", answer);
+    int result = validate_request(uid, tid, 'L', NULL);
+    if (result == -1) printf("list operation failed\n");
 
-    printf("list, uid:%s, tid:%s.\n", uid, tid);
     return 0;
 
 }
@@ -36,8 +121,8 @@ int retrieve(int fd, char* request_message) {
     char* tid = split(request_message, &index, ' ', TID_SIZE + 1);
     char* fname = split(request_message, &index, '\n', FILE_NAME_SIZE);
     if (!uid|| !tid || !fname) return -1;
-
     // printf("retrieve, uid:%s, tid:%s, fname:%s.\n", uid, tid, fname);
+    
     return 0;
 }
 
@@ -46,11 +131,66 @@ int upload(int fd, char* request_message) {
     char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
     char* tid = split(request_message, &index, ' ', TID_SIZE + 1);
     char* fname = split(request_message, &index, ' ', FILE_NAME_SIZE);
-    char* size = split(request_message, &index, ' ', 3);
+    char* size_str = split(request_message, &index, ' ', 3);
     char* data = split(request_message, &index, '\n', FILE_SIZE);
-    if (!uid|| !tid || !fname || !size || !data) return -1;
+    if (!uid|| !tid || !fname || !size_str || !data) return -1;
 
-    // printf("upload, uid:%s, tid:%s, fname:%s, size:%s, data:%s.\n", uid, tid, fname, size, data);
+    int size = atoi(size_str);
+    free(size_str);
+
+    printf("upload, uid:%s, tid:%s, fname:%s, size:%d, data:%s.\n", uid, tid, fname, size, data);
+
+    // validate the operation with the AS
+    int result = validate_request(uid, tid, 'U', fname);
+    if (result == -1) {
+        printf("validation failed\n");
+        return -1;
+    }
+
+    free(tid);
+
+    char* dirname = (char*) malloc(sizeof(char) * (6 + UID_SIZE));
+    sprintf(dirname, "USERS/%s", uid);
+
+    struct stat st = {0};
+    if (stat(dirname, &st) == -1) {
+        if (mkdir(dirname, 0700) == -1) {
+            printf("can't create dir: %s\n", dirname);
+            free(uid);
+            free(dirname);
+            free(fname);
+            free(data);
+            return -1;
+        }
+    }
+
+    free(dirname);
+
+    char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE + strlen(fname)));
+    sprintf(file_path, "USERS/%s/%s", uid, fname);
+    free(uid);
+
+    FILE *fp;
+    fp = fopen(file_path, "w");
+    if (!fp) {
+        free(fname);
+        free(data);
+        printf("cant open file\n");
+        return -1;
+    }
+
+    if (fputs(data, fp) == EOF) {
+        free(fname);
+        free(data);
+        printf("cant wirte data\n");
+        return -1;
+    }
+    fclose(fp);
+    free(fname);
+    free(data);
+
+    printf("upload succesfull\n");
+
     return 0;
 }
 
@@ -103,7 +243,6 @@ int main(int argc, char **argv) {
     }
 
     char* fs_port = (char*) malloc(sizeof(char) * (PORT_SIZE + 1));
-    int verbose = FALSE;
     int port_flag = FALSE;
 
     int c;
@@ -144,6 +283,12 @@ int main(int argc, char **argv) {
     int* users = (int*) malloc(sizeof(int) * MAX_USERS);
     for (int i = 0; i < MAX_USERS; i++) {
         users[i] = -1;
+    }
+
+    //new directory USERS
+    struct stat st = {0};
+    if (stat("USERS", &st) == -1) {
+        mkdir("USERS", 0700);
     }
 
     socklen_t addrlen;

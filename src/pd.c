@@ -303,7 +303,7 @@ int main(int argc, char **argv) {
                 exit(1);
             default:
                 if(FD_ISSET(0,&testfds)) {
-                    if((n=read(0,in_str,127))!=0) {
+                    if((n=read(0,in_str,BUFFER_SIZE))!=0) {
                         if(n==-1) exit(1);
                         in_str[n]=0;
 

@@ -42,7 +42,6 @@ int validate_tid(char* tid) {
     if (tid == NULL) return -1;
 
     if (strlen(tid) != TID_SIZE) return -1;
-    if (tid[0] == '0') return -1;
 
     for (int i = 1; i < TID_SIZE; i++) {
         if (tid[i] < '0' || tid[i] > '9') return -1;

@@ -46,7 +46,7 @@ int open_udp(char* port) {
     hints.ai_socktype=SOCK_DGRAM; // UDP socket
     hints.ai_flags=AI_PASSIVE;
 
-    errcode= getaddrinfo (NULL,port,&hints,&res);
+    errcode= getaddrinfo(NULL,port,&hints,&res);
     if(errcode!=0) return -1;
 
     n= bind (fd,res->ai_addr, res->ai_addrlen);

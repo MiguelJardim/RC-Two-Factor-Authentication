@@ -6,6 +6,7 @@
 
 #define FILE_NAME_SIZE 24
 #define FILE_SIZE 128
+#define F_SIZE 10
 
 #define UID_SIZE 5
 #define TID_SIZE 4

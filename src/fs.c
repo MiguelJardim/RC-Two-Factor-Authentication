@@ -15,8 +15,47 @@
 #include "../aux/conection.h"
 #include "../aux/constants.h"
 
+const char* LST = "LST\0";
+const char* RTV = "RTV\0";
+const char* UPL = "UPL\0";
+const char* DEL = "DEL\0";
+const char* REM = "REM\0";
+
+const char* LST_STATUS = "RST\0";
+const char* RTV_STATUS = "RTT\0";
+const char* UPL_STATUS = "RUP\0";
+const char* DEL_STATUS = "RDL\0";
+const char* REM_STATUS = "RRM\0";
+
+const char* ERR = "ERR\0";
+const char* INV = "INV\0";
+const char* OK = "OK\0";
+const char* NOK = "NOK\0";
+
 // what messaged to display on verbose mode?
 int verbose = FALSE;
+
+int get_file_size(char* path) {
+    struct stat st;
+    stat(path, &st);
+    return (int) st.st_size;
+}
+
+char* get_status(char* operation) {
+    if (strcmp(operation, LST) == 0) return (char*) LST_STATUS;
+    if (strcmp(operation, RTV) == 0) return (char*) RTV_STATUS;
+    if (strcmp(operation, UPL) == 0) return (char*) UPL_STATUS;
+    if (strcmp(operation, DEL) == 0) return (char*) DEL_STATUS;
+    if (strcmp(operation, REM) == 0) return (char*) REM_STATUS;
+    return NULL;
+}
+
+char* abreviated_form(char* operation) {
+    char* output = (char*) malloc(sizeof(char) * 2);
+    output[0] = operation[0];
+    output[1] = '\0';
+    return output;
+}
 
 char* user_dirname(char* uid) {
     char* dirname = (char*) malloc(sizeof(char) * (6 + 5 + UID_SIZE));
@@ -29,7 +68,10 @@ char* user_dirname(char* uid) {
 
 int validate_request(char* uid, char* tid, char* fop, char* fname) {
     char* message = (char*) malloc(sizeof(char) * (4 + UID_SIZE + 1 + TID_SIZE + 2));
-    sprintf(message, "VLD %s %s\n", uid, tid);
+    if (sprintf(message, "VLD %s %s\n", uid, tid) == -1) {
+        free(message);
+        return -1;
+    }
     
     char* answer = send_udp(message, AS_IP, AS_PORT);
     free(message);
@@ -95,6 +137,7 @@ int validate_request(char* uid, char* tid, char* fop, char* fname) {
 }
 
 int validate_filename(char* fname) {
+    if (!fname) return -1;
     if (strlen(fname) > FILE_NAME_SIZE) return -1;
 
     int i = 0;
@@ -139,69 +182,14 @@ int number_of_files(char* dirname) {
 
 }
 
-char* list(int fd, char* request_message) {
-    int index = 4;
-    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
-
-    // check if uid is valide
-    if (validate_uid(uid) == -1) {
-        free(uid);
-        char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "RLS NOK\n") == -1) {
-            free(message);
-            return NULL;
-        }        
-        return message;
-    }
-
-    char* tid = split(request_message, &index, '\n', TID_SIZE + 1);
-
-    // check if request is correctly formulated
-    if (validate_tid(tid) == -1) {
-        free(uid);
-        free(tid);
-        char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "RLS ERR\n") == -1) {
-            free(message);
-            return NULL;
-        }        
-        return message;
-    }
-
+char* list(char* uid) {
     if (verbose) printf("listing directory, uid: %s\n", uid);
-
-    // validate the operation with the AS
-    char* validation_message = (char*) malloc(sizeof(char) * (4 + UID_SIZE + 1 + TID_SIZE + 2));
-    if (sprintf(validation_message, "VLD %s %s\n", uid, tid) == -1) {
-        free(uid);
-        free(tid);
-        free(validation_message);
-        return NULL;
-    }
-    free(validation_message);
-    
-    int result = validate_request(uid, tid, "L", NULL);
-    if (result == -1) {
-        // if the operation is not valid "RLS INV" is sent to the USER 
-        if (verbose) printf("list: AS refused operation, uid: %s\n", uid);
-        free(uid);
-        free(tid);
-
-        char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "RLS INV\n") == -1) {
-            free(message);
-            return NULL;
-        }        
-        return message;
-    }
-
     // get directory name and check if it exists
     char* dirname = user_dirname(uid);
     if (!dirname) {
         if (verbose) printf("can't get directory name, uid: %s\n", uid);
         free(dirname);
         free(uid);
-        free(tid);
         return NULL;
     }
 
@@ -256,21 +244,12 @@ char* list(int fd, char* request_message) {
                 return NULL;
             }
 
-            // file size
-            struct stat st;
-            stat(path, &st);
-            size_t file_size = st.st_size;
+            int file_size = get_file_size(path);
             char* size_str = (char*) malloc(sizeof(char) * FILE_SIZE);
-            if (sprintf(size_str, "%zu", file_size) == -1) {
+            if (sprintf(size_str, " %d", file_size) == -1) {
                 closedir(d);
                 free(message);
                 free(path);
-                return NULL;
-            }
-
-            if (strcat(message, " ") == NULL) {
-                closedir(d);
-                free(message);
                 return NULL;
             }
 
@@ -307,87 +286,47 @@ char* list(int fd, char* request_message) {
     return message;
 }
 
-char* retrieve(int fd, char* request_message) {
-    int index = 4;
-    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
-    char* tid = split(request_message, &index, ' ', TID_SIZE + 1);
-    char* fname = split(request_message, &index, '\n', FILE_NAME_SIZE);
-    if (!uid|| !tid || !fname) return NULL;
-    // printf("retrieve, uid:%s, tid:%s, fname:%s.\n", uid, tid, fname);
-    
-    return NULL;
+char* retrieve(char* uid, char* fname) {
+    if (verbose) printf("retrieving file, uid: %s, filename: %s\n", uid, fname);
+    char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1 + strlen(fname) + 1));
+    sprintf(file_path, "USERS/%s/%s", uid, fname);
+
+    FILE *fp = fopen(file_path, "rb");
+    if (!fp) {
+        free(file_path);
+        char* message = (char*) malloc(sizeof(char) * 9);
+        if (sprintf(message, "RTT EOF\n") == -1) {
+            free(message);
+            fclose(fp);
+            return NULL;
+        }
+        fclose(fp);
+        return message;
+    }
+
+    int size = get_file_size(file_path);
+    char* data = (char*) malloc(sizeof(char) * (size + 1));
+
+    char* res = fgets(data, size + 1, fp);
+    if (!res) {
+        free(data);
+        fclose(fp);
+        return NULL;
+    }
+
+
+    char* message = (char*) malloc(sizeof(char) * (7 + F_SIZE + size + 1));
+    if (sprintf(message, "RTT OK %d %s\n", size, data) == -1) {
+        free(message);
+        fclose(fp);
+        return NULL;
+    }
+    fclose(fp);
+    return message;
 }
 
-char* upload(int fd, char* request_message) {
-    int index = 4;
-    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
-    if (validate_uid(uid) == -1) {
-        char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "RUP NOK\n") == -1) {
-            free(message);
-            return NULL;
-        }        
-        return message;
-    }
-
-    char* tid = split(request_message, &index, ' ', TID_SIZE + 1);
-    char* fname = split(request_message, &index, ' ', FILE_NAME_SIZE);
-
-    // validate the file name
-    int result = validate_filename(fname);
-    if (validate_tid(tid) == -1 || result == -1) {
-        if (verbose && result == -1) printf("upload: invalid filename, uid: %s\n", uid);
-        else printf("upload: invalid tid, uid: %s tid: %s\n", uid, tid);
-        free(uid);
-        free(tid);
-        free(fname);
-        char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "RUP ERR\n") == -1) {
-            free(message);
-            return NULL;
-        }        
-        return message;
-    }
-
-    char* size_str = split(request_message, &index, ' ', 3);
-    int size = atoi(size_str);
-    free(size_str);
-    char* data = split(request_message, &index, '\n', size + 1);
-
-    if (verbose) printf("uploading file, uid: %s\n", uid);
-
-    // check if size is bigger than the limit
-    if (size <= 0 || size > FILE_SIZE || !data) {
-        if (verbose) printf("upload: invalid arguments, uid: %s\n", uid);
-        free(uid);
-        free(tid);
-        free(fname);
-        free(data);
-        char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "RUP ERR\n") == -1) {
-            free(message);
-            return NULL;
-        }        
-        return message;
-    }
-    // validate the operation with the AS
-    result = validate_request(uid, tid, "U", fname);
-    if (result == -1) {
-        if (verbose) printf("upload: AS refused operation, uid: %s\n", uid);
-        free(uid);
-        free(tid);
-        free(fname);
-        free(data);
-        char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "RUP INV\n") == -1) {
-            free(message);
-            return NULL;
-        }        
-        return message;
-    }
-
-    free(tid);
-
+char* upload(char* uid, char* fname, char* data) {
+    if (verbose) printf("uploading file, uid: %s, filename: %s\n", uid, fname);
     char* dirname = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1));
     if (sprintf(dirname, "USERS/%s", uid) == -1) {
         if (verbose) printf("sprintf error\n");
@@ -422,7 +361,7 @@ char* upload(int fd, char* request_message) {
 
     free(dirname);
 
-    char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE + strlen(fname)));
+    char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1 + strlen(fname) + 1));
     sprintf(file_path, "USERS/%s/%s", uid, fname);
     free(uid);
 
@@ -465,44 +404,224 @@ char* upload(int fd, char* request_message) {
 
 }
 
-char* delete(int fd, char* request_message) {
-    int index = 4;
-    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
-    char* tid = split(request_message, &index, ' ', TID_SIZE + 1);
-    char* fname = split(request_message, &index, '\n', FILE_NAME_SIZE);
-    if (!uid|| !tid || !fname) return NULL;
+char* delete(char* uid, char* fname) {
+    if (verbose) printf("deleting file, uid: %s, filename: %s\n", uid, fname);
+    char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE  + 1 + strlen(fname) + 1));
+    sprintf(file_path, "USERS/%s/%s", uid, fname);
 
-    // printf("delete, uid:%s, tid:%s, fname:%s.\n", uid, tid, fname);
-    return NULL;
+    int ret = remove(file_path);
+    free(file_path);
+
+    if(ret == 0) {
+        char* message = (char*) malloc(sizeof(char) * 8);
+        if (sprintf(message, "RDL OK\n") == -1) {
+            free(message);
+            return NULL;
+        }        
+        return message;
+    } else {
+        char* message = (char*) malloc(sizeof(char) * 9);
+        if (sprintf(message, "RDL EOF\n") == -1) {
+            free(message);
+            return NULL;
+        }        
+        return message;
+    }
+
+
+    return NULL;    
 }
 
-char* remove_all(int fd, char* request_message) {
-    int index = 4;
-    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
-    char* tid = split(request_message, &index, '\n', TID_SIZE + 1);
-    if (!uid || !tid) return NULL;
+char* remove_all(char* uid) {
+    if (verbose) printf("removing user, uid: %s\n", uid);
 
-    // printf("remove, uid:%s, tid:%s.\n", uid, tid);
-    return NULL;
+    // get directory name and check if it exists
+    char* dirname = user_dirname(uid);
+    if (!dirname) {
+        if (verbose) printf("can't get directory name, uid: %s\n", uid);
+        free(dirname);
+        free(uid);
+        char* message = (char*) malloc(sizeof(char) * 8);
+        if (sprintf(message, "DEL NOK\n") == -1) {
+            free(message);
+            return NULL;
+        }
+        return message;
+    }
+
+    // try to open directory
+    DIR *d;     
+    struct dirent *dir;     
+    d=opendir(dirname);     
+    if(!d) {
+        if (verbose) {
+            printf("can't open user directory, uid: %s\n", uid);
+        }
+        return NULL;
+    }
+    
+    char ignore_1[2] = ".\0";
+    char ignore_2[3] = "..\0";
+    while((dir=readdir(d)) !=NULL) {      
+        if (strcmp(dir->d_name, ignore_1) != 0 && strcmp(dir->d_name, ignore_2) != 0) {
+            char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE  + 1 + strlen(dir->d_name) + 1));
+            sprintf(file_path, "USERS/%s/%s", uid, dir->d_name);
+            int ret = remove(file_path);
+            free(file_path);
+
+            if(ret != 0)  {
+                char* message = (char*) malloc(sizeof(char) * 9);
+                if (sprintf(message, "REM NOK\n") == -1) {
+                    free(message);
+                    return NULL;
+                }        
+                return message;
+            }
+        }     
+    }
+
+    closedir(d);
+
+    if (rmdir(dirname) != 0) {
+        char* message = (char*) malloc(sizeof(char) * 10);
+        if (sprintf(message, "REM NOK\n") == -1) {
+            free(message);
+            return NULL;
+        }        
+        return message;
+    }
+
+    char* message = (char*) malloc(sizeof(char) * 9);
+    if (sprintf(message, "REM OK\n") == -1) {
+        free(message);
+        return NULL;
+    }        
+    return message;
 }
 
-char* parse_user_request(int fd, char* request_message) {
+char* parse_user_request(char* request_message) {
     int index = 0;
     char* request_type = split(request_message, &index, ' ', 4);
     if (request_type == NULL) return NULL;
 
-    char lst[4] = "LST\0";
-    char rtv[4] = "RTV\0";
-    char upl[4] = "UPL\0";
-    char del[4] = "DEL\0";
-    char rem[4] = "REM\0";
+    char* uid = split(request_message, &index, ' ', UID_SIZE + 1);
+    if (validate_uid(uid) == -1) {
+        char* message = (char*) malloc(sizeof(char) * 9);
+        // ERR message
+        if (sprintf(message, "%s %s\n", get_status(request_type), ERR) == -1) {
+            free(message);
+            return NULL;
+        }        
+        return message;
+    }
 
-    if (strcmp(lst, request_type) == 0) return list(fd, request_message);
-    else if (strcmp(rtv, request_type) == 0) return retrieve(fd, request_message);
-    else if (strcmp(upl, request_type) == 0) return upload(fd, request_message);
-    else if (strcmp(del, request_type) == 0) return delete(fd, request_message);
-    else if (strcmp(rem, request_type) == 0) return remove_all(fd, request_message);
-    else return NULL;
+    // lst operation only needs uid and tid
+    int call = FALSE;
+    char* tid = NULL;
+    if (strcmp(request_type, LST) == 0 || strcmp(request_type, REM) == 0) {
+        tid = split(request_message, &index, '\n', TID_SIZE + 1);
+        call = TRUE;
+    }
+    else tid = split(request_message, &index, ' ', TID_SIZE + 1);
+
+    if (validate_tid(tid) == -1) {
+        if (verbose) printf("%s: invalid tid, uid: %s tid: %s\n", request_type, uid, tid);
+        free(uid);
+        free(tid);
+        char* message = (char*) malloc(sizeof(char) * 9);
+        if (sprintf(message, "%s %s\n", get_status(request_type), ERR) == -1) {
+            free(message);
+            return NULL;
+        }        
+        return message;
+    }
+
+    if (call) {
+        if (strcmp(request_type, LST) == 0) {
+            free(request_type);
+            return list(uid);
+        }
+        if (strcmp(request_type, REM) == 0) {
+            free(request_type);
+            return remove_all(uid);
+        }
+    }
+
+    call = FALSE;
+    char* fname;
+    if (strcmp(request_type, RTV) == 0 || strcmp(request_type, DEL) == 0) {
+        fname = split(request_message, &index, '\n', FILE_NAME_SIZE + 1);
+        call = TRUE;
+    }
+    else fname = split(request_message, &index, ' ', FILE_NAME_SIZE + 1);
+    
+
+    // validate the file name
+    int result = validate_filename(fname);
+    if (result == -1) {
+        if (verbose) printf("%s: invalid filename, uid: %s tid: %s\n", request_type, uid, tid);
+        free(uid);
+        free(tid);
+        char* message = (char*) malloc(sizeof(char) * 9);
+        if (sprintf(message, "%s %s\n", get_status(request_type), ERR) == -1) {
+            free(message);
+            return NULL;
+        }        
+        return message;
+    }
+
+    if (call) {
+        if (strcmp(request_type, RTV) == 0) {
+            free(request_type);
+            return retrieve(uid, fname);
+        }
+        if (strcmp(request_type, DEL) == 0) {
+            free(request_type);
+            return delete(uid, fname);
+        }
+    }
+
+    char* size_str = split(request_message, &index, ' ', 3);
+    int size = atoi(size_str);
+    free(size_str);
+    char* data = split(request_message, &index, '\n', size + 1);
+
+    // check if size is bigger than the limit
+    if (size <= 0 || size > FILE_SIZE || !data) {
+        if (verbose) printf("%s: invalid arguments, uid: %s\n", request_type, uid);
+        free(uid);
+        free(tid);
+        free(fname);
+        free(data);
+        char* message = (char*) malloc(sizeof(char) * 9);
+        if (sprintf(message, "%s %s\n", get_status(request_type), ERR) == -1) {
+            free(message);
+            return NULL;
+        }        
+        return message;
+    }
+    // validate the operation with the AS
+    char* abreviated = abreviated_form(request_type);
+    result = validate_request(uid, tid, abreviated, fname);
+    free(abreviated);
+    if (result == -1) {
+        if (verbose) printf("%s: AS refused operation, uid: %s\n", get_status(request_type), uid);
+        free(uid);
+        free(tid);
+        free(fname);
+        free(data);
+        char* message = (char*) malloc(sizeof(char) * 9);
+        if (sprintf(message, "%s %s\n", get_status(request_type), INV) == -1) {
+            free(message);
+            return NULL;
+        }        
+        return message;
+    }
+
+    free(tid);
+    free(request_type);
+
+    return upload(uid, fname, data);
 }
 
 
@@ -543,9 +662,8 @@ int main(int argc, char **argv) {
 
     // open comunication sockets for as and users
     // TODO handle error (-1)
-    int fd_as = open_udp(fs_port);
     int fd_user = open_tcp(fs_port);
-    if (fd_as == -1 || fd_user == -1) {
+    if (fd_user == -1) {
         printf("can't create socket\n");
         exit(EXIT_FAILURE);
     }
@@ -569,8 +687,7 @@ int main(int argc, char **argv) {
     fd_set inputs, testfds;
     struct timeval timeout;
     int out_fds,n;
-    FD_ZERO(&inputs); 
-    FD_SET(fd_as, &inputs);
+    FD_ZERO(&inputs);
     FD_SET(fd_user, &inputs);
     while(TRUE) {
         testfds=inputs;
@@ -610,8 +727,18 @@ int main(int argc, char **argv) {
                         in_str[n] = 0;
 
                         // TODO handle invalid request
-                        char* res = parse_user_request(users[i], in_str);
-                        if (res) printf("answer sent to user: %s", res);
+                        char* res = parse_user_request(in_str);
+                        if (res) {
+                            printf("answer sent to user: %s\n\n", res);
+                            n=write(users[i], res, strlen(res));
+                            if(n==-1) {
+                                // TODO handle error
+                                continue;
+                            }
+                            FD_CLR(users[i], &inputs);
+                            close(users[i]);
+                            users[i] = -1;
+                        }
                     }
                 }
                 

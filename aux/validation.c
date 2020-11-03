@@ -26,8 +26,10 @@ char* split(char* input, int* index, char separator, int size) {
 }
 
 int validate_uid(char* uid) {
+    if (uid == NULL) return -1;
+
     if (strlen(uid) != UID_SIZE) return -1;
-    else if (uid[0] == '0') return -1;
+    if (uid[0] == '0') return -1;
 
     for (int i = 1; i < UID_SIZE; i++) {
         if (uid[i] < '0' || uid[i] > '9') return -1;
@@ -36,7 +38,22 @@ int validate_uid(char* uid) {
     return 0;
 }
 
+int validate_tid(char* tid) {
+    if (tid == NULL) return -1;
+
+    if (strlen(tid) != TID_SIZE) return -1;
+    if (tid[0] == '0') return -1;
+
+    for (int i = 1; i < TID_SIZE; i++) {
+        if (tid[i] < '0' || tid[i] > '9') return -1;
+    }
+
+    return 0;
+}
+
 int validate_password(char* password) {
+    if (password == NULL) return -1;
+
     if (strlen(password) != PASSWORD_SIZE) return -1;
     
     for (int i = 0; i < PASSWORD_SIZE; i++) {
@@ -47,6 +64,8 @@ int validate_password(char* password) {
 }
 
 int validate_ip(char* ip) {
+    if (ip == NULL) return -1;
+
     if (strlen(ip) < 7 || strlen(ip) > IP_MAX_SIZE) return -1;
 
     char* validated_ip = (char*) malloc(sizeof(char) * (IP_MAX_SIZE + 1));
@@ -111,6 +130,8 @@ int validate_ip(char* ip) {
 }
 
 int validate_port(char* port) {
+    if (port == NULL) return -1;
+
     if (strlen(port) != PORT_SIZE) return -1;
 
     for (int i = 0; i < 5; i++) {

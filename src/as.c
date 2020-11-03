@@ -13,12 +13,24 @@
 #include <signal.h>
 #include "../aux/constants.h"
 #include <dirent.h>
+#define MAX_REQUESTS 20
 
+char default_tid[5] = "0000\n";
 
+int no_requests = 0;
 int user_been_treat = -1;
 int users_login_info[MAX_USERS];
-int users_vc[MAX_USERS];
-int users_rid[MAX_USERS];
+
+typedef struct request {
+    char uid[6];
+    char rid[5];
+    char vc[5];
+    char tid[5];
+    char fop[2];
+    char* fname;
+} Request;
+
+Request* users_requests[MAX_REQUESTS];
 
 char* send_udp(char* message, char* ip, char* port) {
     int fd,errcode;
@@ -97,12 +109,12 @@ int validate_u_ist_id(char* uid) {
     return 0;
 }
 
-int validate_rid(char* rid) {
-    if (strlen(rid) != 4) return -1;
-    else if (rid[0] == '0') return -1;
+int validate_four_digit_number(char* num) {
+    if (strlen(num) != 4) return -1;
+    else if (num[0] == '0') return -1;
 
     for (int i = 1; i < 4; i++) {
-        if (rid[i] < '0' || rid[i] > '9') return -1;
+        if (num[i] < '0' || num[i] > '9') return -1;
     }
 
     return 0;
@@ -233,8 +245,50 @@ int UID_exists(char* u_ist_id) {
     return FALSE;
 }
 
+int check_rid_exists(char* rid, char* u_ist_id) {
+    for (int i = 0; i < no_requests; i++) {
+        if (strcmp(users_requests[i]->uid, u_ist_id) == 0)
+            if (strcmp(users_requests[i]->rid, rid) == 0)
+                return TRUE;
+    }
+    return FALSE;
+}
+
+int get_request_index(char* n_id, char* u_ist_id, int option) {
+    //se option for 0, entao quer usar o rid, se for 1 quer usar o tid
+    for (int i = 0; i < no_requests; i++) {
+        if (strcmp(users_requests[i]->uid, u_ist_id) == 0)
+            if (option == 0) {
+                if (strcmp(users_requests[i]->rid, n_id) == 0)
+                    return i;
+            }
+            if (option == 1) {
+                if (strcmp(users_requests[i]->tid, n_id) == 0)
+                    return i;
+            }
+    }
+    return -1;
+}
+
 int four_digit_number_generator() {
-   return rand() % 9000 + 1000;
+    return rand() % 9000 + 1000;
+}
+
+int user_logged_with_uid(char* u_ist_id) {
+    FILE* uid_login_file;
+    char login_filename[28];
+    char user_number[3];
+    sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id);
+    if (access(login_filename, F_OK) != -1) {
+        uid_login_file = fopen(login_filename, "r");
+        fscanf(uid_login_file, "%s", user_number);
+        fclose(uid_login_file);
+    }
+    //caso o ficheiro de log in nao exista por nenhum user ter efetuado login com este uid
+    else {
+       sprintf(user_number, "%d", -1); 
+    }
+    return atoi(user_number);
 }
 
 char* regist_UID(char* message, int i) {  
@@ -296,13 +350,21 @@ char* regist_UID(char* message, int i) {
         return reg_status;
     }
 
-    //se ja existir este id, verifica se password é igual, se for OK, se nao for NOK
+    //se ja existir este id, verifica se password é igual, se for, escreve o ip e porto e retorna OK, se nao for NOK
     char v = UID_exists(u_ist_id);
     if (v) {
-        if (equal_passwords(u_ist_id, password))
+        if (equal_passwords(u_ist_id, password)) {
             strcpy(reg_status, ok);
+            FILE* uid_reg_file;
+            char reg_filename[28];
+            sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id);
+            uid_reg_file = fopen(reg_filename, "w");
+            fprintf(uid_reg_file, "%s %s\n", pd_ip, pd_port);
+            fclose(uid_reg_file);
+        }
         else
             strcpy(reg_status, nok);
+
         free(u_ist_id);
         free(password);
         free(pd_ip);
@@ -436,7 +498,7 @@ char* request_VC(char* message, int i) {
         return rrq_status;
     }
 
-    //verifica se o user efetuou REQ com o seu UID
+    //verifica se o user efetuou REQ com um UID existente
     int v = UID_exists(u_ist_id);
 
     if(!v) {
@@ -445,14 +507,8 @@ char* request_VC(char* message, int i) {
         return rrq_status;
     }
 
-    FILE* uid_login_file;
-    char login_filename[28];
-    sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id);
-    uid_login_file = fopen(login_filename, "r");
-    char user_number[2];
-    fscanf(uid_login_file, "%s", user_number);
-    fclose(uid_login_file);
-    int u = atoi(user_number);
+    //verifica se o user efetuou Req com o uid que efetuou login
+    int u = user_logged_with_uid(u_ist_id);
     //user nao efetuou REQ para o seu UID com que efetuou login
     if (u != user_been_treat) {
         free(u_ist_id);
@@ -468,11 +524,18 @@ char* request_VC(char* message, int i) {
         free(rid);
         return rrq_status;
     }
-    if (validate_rid(rid) != 0) {
+    if (validate_four_digit_number(rid) != 0) {
         strcpy(rrq_status, err);
         free(u_ist_id);
         free(rid);
         return rrq_status;
+    }
+    //se o rid ja existir para o mesmo UID
+    if (check_rid_exists(rid, u_ist_id)) {
+        strcpy(rrq_status, err);
+        free(u_ist_id);
+        free(rid);
+        return rrq_status;    
     }
 
     //leitura e verificacao de FOP
@@ -522,16 +585,25 @@ char* request_VC(char* message, int i) {
     //criacao da mensagem VLC do as para o pd
     char vlc_message_to_pd[45];
     int vc = four_digit_number_generator();
-    printf("%d\n", vc);
-    vc = 1000;
     if (f == 2)
         sprintf(vlc_message_to_pd, "VLC %s %d %s %s\n", u_ist_id, vc, fop, fname);    
     else
         sprintf(vlc_message_to_pd, "VLC %s %d %s\n", u_ist_id, vc, fop);
 
-    printf("mesnagem: %s", vlc_message_to_pd);
-    users_rid[user_been_treat] = atoi(rid);
-    users_vc[user_been_treat] = vc;
+    no_requests++;
+    Request *request = (Request*) malloc(sizeof(Request));
+    char vc_str[5];
+    sprintf(vc_str, "%d", vc);
+    strcpy(request->uid, u_ist_id);
+    strcpy(request->rid, rid);
+    strcpy(request->vc, vc_str);
+    strcpy(request->fop, fop);
+    strcpy(request->tid, default_tid);
+    if (f == 2) {
+        request->fname = (char*) malloc(sizeof(char) * (strlen(fname) + 1));
+        strcpy(request->fname, fname);
+    }
+    users_requests[no_requests-1] = request; 
 
     free(rid);
     free(fop);
@@ -545,9 +617,9 @@ char* request_VC(char* message, int i) {
     char pd_ip[16];
     char pd_port[6];
     fscanf(uid_reg_file, "%s %s", pd_ip, pd_port);
-printf("1\n");
+
     char* rvc_status = send_udp(vlc_message_to_pd, pd_ip, pd_port);
-printf("1\n");
+
     //verificacao do rvc status
     int index = 0;
     char* rvc = split(rvc_status, &index, ' ', 4);
@@ -575,6 +647,99 @@ printf("1\n");
     free(uid);
     free(status);
     return rrq_status;
+}
+
+char* check_VC(char* message, int i) {
+    int input_index = i;
+    char failed[7] = "RAU 0\n\0";
+    char* rau_status = (char*) malloc(sizeof(char)*10);
+    strcpy(rau_status, failed);
+
+    char* u_ist_id = split(message, &input_index, ' ', 6); 
+    if (u_ist_id == NULL) {
+        free(u_ist_id);
+        return rau_status;
+    }
+    if (validate_u_ist_id(u_ist_id) != 0) {
+        free(u_ist_id);
+        return rau_status;
+    }
+
+    //verifica se o user efetuou login com algum UID
+    if (users_login_info[user_been_treat] == 0) {
+        free(u_ist_id);
+        return rau_status;
+    }
+
+    //verifica se o user efetuou AUT com um UID existente
+    int v = UID_exists(u_ist_id);
+
+    if(!v) {
+        free(u_ist_id);
+        return rau_status;
+    }
+
+    //verifica se o user efetuou AUT com o uid que efetuou login
+    int u = user_logged_with_uid(u_ist_id);
+    //user nao efetuou AUT para o seu UID com que efetuou login
+    if (u != user_been_treat) {
+        free(u_ist_id);
+        return rau_status;
+    }
+
+    //leitura e verificacao do RID
+    char* rid = split(message, &input_index, ' ', 5);
+    if (rid == NULL) {
+        free(u_ist_id);
+        free(rid);
+        return rau_status;
+    }
+    if (validate_four_digit_number(rid) != 0) {
+        free(u_ist_id);
+        free(rid);
+        return rau_status;
+    }
+    //verifica se o RID existe para o UID e se nao exitir RID entao devolve RAU 0, como em todos os outros casos de erro nesta funcao
+    if (!check_rid_exists(rid, u_ist_id)) {
+        free(u_ist_id);
+        free(rid);
+        return rau_status;    
+    }
+
+    char* vc = split(message, &input_index, '\n', 5);
+    if(validate_four_digit_number(vc) != 0) {
+        free(u_ist_id);
+        free(rid);
+        free(vc);
+        return rau_status;
+    }
+
+    int request_index = get_request_index(rid, u_ist_id, 0);
+    if (strcmp(users_requests[request_index]->vc, vc) == 0) {
+        //verifica se o tid ja foi criado
+        if (strcmp(users_requests[request_index]->tid, default_tid) == 0) {
+            int tid = four_digit_number_generator();
+            char tid_str[5];
+            sprintf(tid_str, "%d", tid);
+            sprintf(rau_status, "RAU %s\n", tid_str);
+            strcpy(users_requests[request_index]->tid, tid_str);
+        }
+        //caso ja tenha um tid mantem se o mesmo nao se altera
+        else {
+            sprintf(rau_status, "RAU %s\n", users_requests[request_index]->tid);   
+        }
+        
+    }
+        
+    free(u_ist_id);
+    free(rid);
+    free(vc);
+    return rau_status;
+}
+
+char* vld_operation(char* message, int i) {
+    int input_index = i;
+    
 }
 
 int connect_tcp(char* ip, char* port) {
@@ -656,13 +821,17 @@ char* treatMessage(char* message) {
 
     char aut[4] = "AUT\0";
     if (strcmp(action, aut) == 0) {
+        char* answer = check_VC(message, input_index);
         free(action);
+        return answer;
         //trata a operacao aut
     }
 
     char vld[4] = "VLD\0";
     if (strcmp(action, vld) == 0) {
+        char* answer = vld_operation(message, input_index);
         free(action);
+        return answer;
         //trata a operacao vld
     }
 
@@ -673,8 +842,6 @@ char* treatMessage(char* message) {
     return answer;
 }
 
-
-
 int main(int argc, char **argv) {
 
     if (argc < 1 || argc > 4) {
@@ -684,7 +851,7 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < MAX_USERS; i++)
         users_login_info[i] = 0; //coloca todas as posicoes a 0 para informar que os users que se podem ligar ao as nao efetuaram login, se efetuarem um login bem sucedido entao é colocado a 1 na sua posicao
-
+        
     char* as_port = (char*) malloc(sizeof(char) * 6);
 
     int flagV;

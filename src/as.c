@@ -15,7 +15,7 @@
 #include <dirent.h>
 #define MAX_REQUESTS 20
 
-
+int verbose = FALSE;
 int no_requests = 0;
 int user_been_treat = -1;
 int users_login_info[MAX_USERS];
@@ -817,7 +817,7 @@ char* check_VC(char* message, int i) {
         free(vc);
         return rau_status;
     }
-
+    printf("verifica o vc\n");
     int request_index = get_request_index(rid, u_ist_id, 0);
     if (strcmp(users_requests[request_index]->vc, vc) == 0) {
         //verifica se o tid ja foi criado
@@ -831,6 +831,7 @@ char* check_VC(char* message, int i) {
             users_requests[request_index]->tid = (char*) malloc(sizeof(char) * (TID_SIZE + 1));
             strcpy(users_requests[request_index]->tid, tid);
             free(tid);
+            printf("tid adicionado: %s\n", users_requests[request_index]->tid);
         }
         //caso ja tenha um tid mantem se o mesmo nao se altera
         else {
@@ -838,7 +839,7 @@ char* check_VC(char* message, int i) {
         }
         
     }
-        
+    printf("request index: %d\n", request_index);
     free(u_ist_id);
     free(rid);
     free(vc);
@@ -944,10 +945,9 @@ char* treatMessage(char* message) {
 
     char vld[4] = "VLD\0";
     if (strcmp(action, vld) == 0) {
-        printf("%s", message);
+        printf("------------%s----------------", message);
         char* answer = vld_operation(message, input_index);
         free(action);
-        printf("%s", answer);
         return answer;
         //trata a operacao vld
     }
@@ -973,7 +973,6 @@ int main(int argc, char **argv) {
         
     char* as_port = (char*) malloc(sizeof(char) * 6);
 
-    int flagV;
     int flagPort = FALSE;
 
     char c;
@@ -984,7 +983,7 @@ int main(int argc, char **argv) {
             flagPort = TRUE;
             break;
         case 'v':
-            flagV = TRUE;
+            verbose = TRUE;
             break;
         default:
             abort();
@@ -1035,19 +1034,19 @@ int main(int argc, char **argv) {
                 exit(1);
             default:
                 if (FD_ISSET(fd_udp, &testfds)) {
-                    printf("read udp\n");
+                    if (verbose) printf("read udp\n");
                     struct sockaddr_in addr;
                     socklen_t addrlen = sizeof(addr);
                     ssize_t n;
                     n = recvfrom (fd_udp, in_str, BUFFER_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
                     if (n == -1) /*error*/ break; 
-                    printf("-%s-", in_str); 
+                    in_str[n] = 0;
                     char* answer = treatMessage(in_str);
                     n = sendto (fd_udp, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
                     if (n == -1) /*error*/break;
                 }
                 if (FD_ISSET(fd_user, &testfds)) {
-                    printf("read tcp\n");
+                    if (verbose) printf("read tcp\n");
                     int newfd;
                     struct sockaddr_in addr;
                     socklen_t addrlen;
@@ -1055,7 +1054,7 @@ int main(int argc, char **argv) {
                     if ((newfd = accept(fd_user, (struct sockaddr*)&addr, &addrlen)) == -1 ) /*error*/ exit(1);
                     for (int i = 0; i < MAX_USERS; i++) {
                         if (users[i] == -1) {
-                            printf("added user\n");
+                            if (verbose) printf("added user\n");
                             users[i] = newfd;
                             FD_SET(users[i], &inputs);
                             break;
@@ -1067,10 +1066,20 @@ int main(int argc, char **argv) {
                         user_been_treat = i;
                         n = read (users[i], in_str, BUFFER_SIZE - 1);
                         in_str[n] = 0;
-                        if(n == -1) exit(EXIT_FAILURE);
+                        if(n == -1) {
+                            printf("user can't read\n");
+                            FD_CLR(users[i], &inputs);
+                            close(users[i]);
+                            users[i] = -1;
+                        } 
                         char* answer = treatMessage(in_str);
-                        n = write (users[i], answer, n);
-                        if (n == -1)  exit(1);
+                        n = write (users[i], answer, strlen(answer));
+                        if(n == -1) {
+                            printf("user can't write\n");
+                            FD_CLR(users[i], &inputs);
+                            close(users[i]);
+                            users[i] = -1;
+                        } 
                     }
                 }
                 break;

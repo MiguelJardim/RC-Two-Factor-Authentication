@@ -64,7 +64,10 @@ int open_tcp(char* port) {
     struct addrinfo hints,*res;
 
     fd=socket(AF_INET,SOCK_STREAM,0);
-    if (fd==-1) return -1;
+    if (fd==-1) {
+        freeaddrinfo(res);
+        return -1;
+    }
 
     memset(&hints,0,sizeof hints);
     hints.ai_family=AF_INET;
@@ -72,14 +75,16 @@ int open_tcp(char* port) {
     hints.ai_flags=AI_PASSIVE;
 
     errcode=getaddrinfo(NULL,port,&hints,&res);
-    if((errcode)!=0) return -1;
+    if((errcode)!=0) {
+        freeaddrinfo(res);
+        return -1;
+    }
 
     n=bind(fd,res->ai_addr,res->ai_addrlen);
+    freeaddrinfo(res);
     if(n==-1) return -1;
 
     if(listen(fd,MAX_USERS)==-1) return -1;
-
-    freeaddrinfo(res);
 
     return fd;
 }

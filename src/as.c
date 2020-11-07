@@ -49,6 +49,31 @@ Request* new_request(char* uid, char* rid, char* vc, char* fop) {
     return request;
 } 
 
+void update_request(Request* request, char* rid, char* vc, char* fop, char* fname) {
+    
+    strcpy(request->rid, rid);
+    strcpy(request->vc, vc);
+    strcpy(request->fop, fop);
+    if (request->tid != NULL) {
+        free(request->tid);
+        request->tid = NULL;
+    }
+    if (request->fname == NULL && fname != NULL) {
+        request->fname = (char*) malloc(sizeof(char) * (strlen(fname) + 1));
+        strcpy(request->fname, fname);
+    }
+    else if (request->fname != NULL && fname != NULL) {
+        free(request->fname);
+        request->fname = (char*) malloc(sizeof(char) * (strlen(fname) + 1));
+        strcpy(request->fname, fname);
+    }
+    else if (request->fname != NULL && fname == NULL) {
+        free(request->fname);
+        request->fname = NULL;
+    }
+    
+}
+
 char* send_udp(char* message, char* ip, char* port) {
     int fd,errcode;
     ssize_t n;
@@ -154,6 +179,7 @@ int open_tcp(char* port) {
 }
 
 int validate_port(char* port) {
+    if (port == NULL) return -1;
     if (strlen(port) != 5) return -1;
 
     for (int i = 0; i < 5; i++) {
@@ -164,6 +190,7 @@ int validate_port(char* port) {
 }
 
 int validate_u_ist_id(char* uid) {
+    if (uid == NULL) return -1;
     if (strlen(uid) != 5) return -1;
     else if (uid[0] == '0') return -1;
 
@@ -175,6 +202,7 @@ int validate_u_ist_id(char* uid) {
 }
 
 int validate_four_digit_number(char* num) {
+    if (num == NULL) return -1;
     if (strlen(num) != 4) return -1;
     else if (num[0] == '0') return -1;
 
@@ -186,6 +214,7 @@ int validate_four_digit_number(char* num) {
 }
 
 int validate_tid(char* num) {
+    if (num == NULL) return -1;
     if (strlen(num) != 4) return -1;
 
     for (int i = 0; i < 4; i++) {
@@ -196,6 +225,7 @@ int validate_tid(char* num) {
 }
 
 int validate_fop(char* fop) {
+    if (fop == NULL) return -1;
     int i = -1;
     if (strlen(fop) != 1) return -1;
 
@@ -208,6 +238,7 @@ int validate_fop(char* fop) {
 }
 
 int validate_password(char* password) {
+    if (password == NULL) return -1;
     if (strlen(password) != 8) return -1;
     
     for (int i = 0; i < 8; i++) {
@@ -317,6 +348,10 @@ int equal_passwords(char* u_ist_id, char* password) {
     char p[9];
     sprintf(pass_path_file, "USERS/%s/%s_pass.txt", u_ist_id, u_ist_id);
     pass_file = fopen(pass_path_file, "r");
+    if (pass_file == NULL) {      
+        if (verbose) printf("Unable to open password file.\n");
+        return FALSE;
+    }
     fscanf(pass_file, "%s", p);
     fclose(pass_file);
     //pass diferente
@@ -330,7 +365,7 @@ int equal_passwords(char* u_ist_id, char* password) {
 
 int UID_exists(char* u_ist_id) {
     DIR* d;
-    char dirname[28];
+    char dirname[13];
 
     sprintf(dirname, "USERS/%s", u_ist_id);
     d = opendir(dirname);
@@ -373,6 +408,9 @@ int get_request_index(char* n_id, char* u_ist_id, int option) {
                 if (strcmp(users_requests[i]->tid, n_id) == 0)
                     return i;
             }
+            else if (option == 2) {
+                return i;
+            }
         }
     }
     return -1;
@@ -389,14 +427,87 @@ int user_logged_with_uid(char* u_ist_id) {
     sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id);
     if (access(login_filename, F_OK) != -1) {
         uid_login_file = fopen(login_filename, "r");
+        if (uid_login_file == NULL) {      
+            if (verbose) printf("Unable to open login file.\n");
+            return -1;
+        }
         fscanf(uid_login_file, "%s", user_number);
         fclose(uid_login_file);
     }
     //caso o ficheiro de log in nao exista por nenhum user ter efetuado login com este uid
     else {
-       sprintf(user_number, "%d", -1); 
+       return -1;
     }
     return atoi(user_number);
+}
+
+void logout_user(char* u_ist_id) {
+    FILE* uid_login_file;
+    char login_filename[28];
+    char user_number[3];
+    sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id);
+    if (access(login_filename, F_OK) != -1) {
+        //se o ficheiro existe
+        uid_login_file = fopen(login_filename, "r");
+        if (uid_login_file == NULL) {      
+            if (verbose) printf("Unable to open login file\n");
+            return;
+        }
+        fscanf(uid_login_file, "%s", user_number);
+        fclose(uid_login_file);
+        if (remove(login_filename) != 0) {
+            if (verbose) printf("Unable to delete login file and logout user\n");
+            return;
+        }   
+    }
+    else
+        return;
+    
+    users_login_info[atoi(user_number)] = 0;
+    return;
+}
+
+void delete_uid_files(char* u_ist_id) {
+    char reg_filename[28], pass_filename[28];
+    sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id);
+    sprintf(pass_filename, "USERS/%s/%s_pass.txt", u_ist_id, u_ist_id);
+    if (access(reg_filename, F_OK) != -1) {
+        if (remove(reg_filename) != 0) {
+            if (verbose) printf("Unable to delete reg file and unregist UID\n");
+            return;
+        }      
+    }
+    else {
+        if (verbose) printf("inexistent file\n");
+        return;
+    }
+        
+    
+    if (access(pass_filename, F_OK) != -1) {
+        if (remove(pass_filename) != 0) {
+            if (verbose) printf("Unable to delete pass file and unregist UID\n");
+            return;
+        }      
+    }
+    else {
+        if (verbose) printf("inexistent file\n");
+        return;
+    }
+
+    DIR* dir;
+    char dirname[13];
+    sprintf(dirname, "USERS/%s", u_ist_id);
+    dir = opendir(dirname);
+    if (dir) {
+        closedir(dir);
+        rmdir(dirname);
+        return;
+    }
+    else {
+        if (verbose) printf("inexistent dir\n");
+        return;
+    }
+
 }
 
 char* regist_UID(char* message, int i) {  
@@ -407,35 +518,23 @@ char* regist_UID(char* message, int i) {
     strcpy(reg_status, nok);
     
     char* u_ist_id = split(message, &input_index, ' ', 6);
-    if (u_ist_id == NULL) {
-        free(u_ist_id);
-        return reg_status;   
-    }
     if (validate_u_ist_id(u_ist_id) != 0) {
+        if (verbose) printf("Invalid uid\n");
         free(u_ist_id);
         return reg_status;
     }
     
     char* password = split(message, &input_index, ' ', 9);
-    if (password == NULL) {
-        free(u_ist_id);
-        free(password);
-        return reg_status; 
-    }
     if (validate_password(password) != 0) {
+        if (verbose) printf("Invalid password\n");
         free(u_ist_id);
         free(password);
         return reg_status;
     }
     
     char* pd_ip = split(message, &input_index, ' ', 16);
-    if (pd_ip == NULL) {
-        free(u_ist_id);
-        free(password);
-        free(pd_ip);
-        return reg_status; 
-    }
     if (validate_ip(pd_ip) != 0) {
+        if (verbose) printf("Invalid PD IP\n");
         free(u_ist_id);
         free(password);
         free(pd_ip);
@@ -443,14 +542,8 @@ char* regist_UID(char* message, int i) {
     }
 
     char* pd_port = split(message, &input_index, '\n', 6);
-    if (pd_port == NULL) {
-        free(u_ist_id);
-        free(password);
-        free(pd_ip);
-        free(pd_port);
-        return reg_status;    
-    }
     if (validate_port(pd_port) != 0) {
+        if (verbose) printf("Invalid PD PORT\n");
         free(u_ist_id);
         free(password);
         free(pd_ip);
@@ -469,9 +562,12 @@ char* regist_UID(char* message, int i) {
             uid_reg_file = fopen(reg_filename, "w");
             fprintf(uid_reg_file, "%s %s\n", pd_ip, pd_port);
             fclose(uid_reg_file);
+            if (verbose) printf("UID registed successfully\n");
         }
-        else
+        else {
+            if (verbose) printf("Trying to regist with existing UID and different passwords\n");
             strcpy(reg_status, nok);
+        }
 
         free(u_ist_id);
         free(password);
@@ -502,7 +598,7 @@ char* regist_UID(char* message, int i) {
         uid_reg_file = fopen(reg_filename, "w");
 
         if (uid_pass_file == NULL || uid_reg_file == NULL) {      
-            printf("Unable to create file.\n");
+            if (verbose) printf("Unable to create/open file.\n");
             exit(EXIT_FAILURE);
         }
 
@@ -518,6 +614,7 @@ char* regist_UID(char* message, int i) {
         free(pd_ip);
         free(pd_port);
         strcpy(reg_status, ok);
+        if (verbose) printf("UID registed successfully\n");
         return reg_status;
     }
 }
@@ -531,22 +628,15 @@ char* login_UID(char* message, int i) {
     strcpy(log_status, err);
 
     char* u_ist_id = split(message, &input_index, ' ', 6);
-    if (u_ist_id == NULL) {
-        free(u_ist_id);
-        return log_status;     
-    }
     if (validate_u_ist_id(u_ist_id) != 0) {
+        if (verbose) printf("Invalid uid\n");
         free(u_ist_id);
         return log_status;
     }
 
     char* password = split(message, &input_index, '\n', 9);
-    if (password == NULL) {
-        free(u_ist_id);
-        free(password);
-        return log_status;    
-    }
     if (validate_password(password) != 0) {
+        if (verbose) printf("Invalid password\n");
         free(u_ist_id);
         free(password);
         return log_status;
@@ -554,6 +644,7 @@ char* login_UID(char* message, int i) {
 
     int v = UID_exists(u_ist_id);
     if (!v){
+        if (verbose) printf("UID not registered on server\n");
         free(u_ist_id);
         free(password);
         return log_status;
@@ -568,10 +659,12 @@ char* login_UID(char* message, int i) {
             fprintf(uid_login_file, "%d\n", user_been_treat);
             fclose(uid_login_file);
             users_login_info[user_been_treat] = 1; // significa que este user efetuou um login com um UID
+            if (verbose) printf("User is now logged in with uid: %s\n", u_ist_id);
         }
-        else
+        else {
+            if (verbose) printf("Incorrect password\n");
             strcpy(log_status, nok);        
-        
+        }
         return log_status;
     }
 
@@ -589,18 +682,15 @@ char* request_VC(char* message, int i) {
     char* rrq_status = (char*) malloc(sizeof(char) * 11);
     
     char* u_ist_id = split(message, &input_index, ' ', 6); 
-    if (u_ist_id == NULL) {
-        free(u_ist_id);
-        strcpy(rrq_status, euser);
-        return rrq_status;
-    }
     if (validate_u_ist_id(u_ist_id) != 0) {
+        if (verbose) printf("Invalid UID\n");
         free(u_ist_id);
         strcpy(rrq_status, euser);
         return rrq_status;
     }
     //verifica se o user efetuou login com algum UID
     if (users_login_info[user_been_treat] == 0) {
+        if (verbose) printf("User is not logged in\n");
         free(u_ist_id);
         strcpy(rrq_status, elog);
         return rrq_status;
@@ -610,15 +700,18 @@ char* request_VC(char* message, int i) {
     int v = UID_exists(u_ist_id);
 
     if(!v) {
+        if (verbose) printf("UID not registered on server\n");
         strcpy(rrq_status, euser);
         free(u_ist_id);
         return rrq_status;
     }
 
     //verifica se o user efetuou Req com o uid que efetuou login
-    int u = user_logged_with_uid(u_ist_id);
+    v = user_logged_with_uid(u_ist_id);
     //user nao efetuou REQ para o seu UID com que efetuou login
-    if (u != user_been_treat) {
+    if (v != user_been_treat) {
+        if (verbose && v != -1) printf("User is not logged in with this UID\n");
+        else if (verbose && v == -1) printf("ERROR openning uid login file");
         free(u_ist_id);
         strcpy(rrq_status, euser);
         return rrq_status;
@@ -626,39 +719,19 @@ char* request_VC(char* message, int i) {
 
     //leitura e verificacao do RID
     char* rid = split(message, &input_index, ' ', 5);
-    if (rid == NULL) {
-        strcpy(rrq_status, err);
-        free(u_ist_id);
-        free(rid);
-        return rrq_status;
-    }
     if (validate_four_digit_number(rid) != 0) {
+        if (verbose) printf("Invalid RID\n");
         strcpy(rrq_status, err);
         free(u_ist_id);
         free(rid);
         return rrq_status;
-    }
-    //se o rid ja existir para o mesmo UID
-    if (check_rid_exists(rid, u_ist_id)) {
-        strcpy(rrq_status, err);
-        free(u_ist_id);
-        free(rid);
-        return rrq_status;    
     }
 
     //leitura e verificacao de FOP
-
     char* fop = split(message, &input_index, ' ', 2);
-
-    if (fop == NULL) {
-        strcpy(rrq_status, efop);
-        free(u_ist_id);
-        free(rid);
-        free(fop);
-        return rrq_status;
-    }
     int f = validate_fop(fop);
     if (f == -1) {
+        if (verbose) printf("Invalid FOP\n");
         strcpy(rrq_status, efop);
         free(u_ist_id);
         free(rid);
@@ -668,9 +741,9 @@ char* request_VC(char* message, int i) {
 
     //leitura de Fname
     char* fname = split(message, &input_index, '\n', FILE_NAME_SIZE);
-
     if (f == 2) {
         if (fname == NULL) {
+            if (verbose) printf("This operation needs a file name\n");
             free(u_ist_id);
             free(rid);
             free(fop);
@@ -681,6 +754,7 @@ char* request_VC(char* message, int i) {
     }
     else {
         if (fname != NULL) {
+            if (verbose) printf("This operation doesn't need a file name\n");
             free(u_ist_id);
             free(rid);
             free(fop);
@@ -700,17 +774,33 @@ char* request_VC(char* message, int i) {
     
     char* vc_str = (char*) malloc(sizeof(char) * 5);
     sprintf(vc_str, "%d", vc);
-    Request* request = new_request(u_ist_id, rid, vc_str, fop);
-    free(vc_str);
-    
-    if (f == 2) {
-        request->fname = (char*) malloc(sizeof(char) * (strlen(fname) + 1));
-        strcpy(request->fname, fname);
-    }
-    users_requests[no_requests++] = request; 
 
+    v = get_request_index(NULL, u_ist_id, 2);
+    //uid ainda nao tem nenhum request
+    if (v == -1) {
+        if (verbose) printf("Created a new request for UID: %s\n", u_ist_id);
+        Request* request = new_request(u_ist_id, rid, vc_str, fop);
+        if (f == 2) {
+            request->fname = (char*) malloc(sizeof(char) * (strlen(fname) + 1));
+            strcpy(request->fname, fname);
+        }
+        users_requests[no_requests++] = request; 
+    }
+    //uid ja tem um request
+    else {
+        if (verbose) printf("This UID has already a request, it will be overwritten by this new request\n");
+        if (f == 2) {
+            update_request(users_requests[v], rid, vc_str, fop, fname);
+        }
+        else {
+            update_request(users_requests[v], rid, vc_str, fop, NULL);
+        }
+    }
+
+    free(vc_str);
     free(rid);
     free(fop);
+    free(fname);
 
     //leitura do pd ip e pd port do ficheiro de registo txt
     FILE* uid_reg_file;
@@ -734,6 +824,7 @@ char* request_VC(char* message, int i) {
     free(rvc_status);
     //verifica se o rvc status é do tipo "RVC UID"
     if (strcmp(rvc, r) != 0 || strcmp(uid, u_ist_id) != 0){
+        if (verbose) printf("Unexpected RVC message from PD\n");
         strcpy(rrq_status, epd);
         free(u_ist_id);
         free(rvc);
@@ -741,8 +832,10 @@ char* request_VC(char* message, int i) {
         free(status);
         return rrq_status;
     }
-    if (strcmp(status, nok) == 0)
+    if (strcmp(status, nok) == 0) {
+        if (verbose) printf("Unexpected RVC message from PD\n");
         strcpy(rrq_status, err);
+    }
     else
         strcpy(rrq_status, ok);
 
@@ -750,6 +843,7 @@ char* request_VC(char* message, int i) {
     free(rvc);
     free(uid);
     free(status);
+    if (verbose) printf("Requested sucessfully\n");
     return rrq_status;
 }
 
@@ -760,17 +854,15 @@ char* check_VC(char* message, int i) {
     strcpy(rau_status, failed);
 
     char* u_ist_id = split(message, &input_index, ' ', 6); 
-    if (u_ist_id == NULL) {
-        free(u_ist_id);
-        return rau_status;
-    }
     if (validate_u_ist_id(u_ist_id) != 0) {
+        if (verbose) printf("Invalid UID\n");
         free(u_ist_id);
         return rau_status;
     }
 
     //verifica se o user efetuou login com algum UID
     if (users_login_info[user_been_treat] == 0) {
+        if (verbose) printf("User is not logged in\n");
         free(u_ist_id);
         return rau_status;
     }
@@ -779,6 +871,7 @@ char* check_VC(char* message, int i) {
     int v = UID_exists(u_ist_id);
 
     if(!v) {
+        if (verbose) printf("UID not registered on server\n");
         free(u_ist_id);
         return rau_status;
     }
@@ -787,24 +880,23 @@ char* check_VC(char* message, int i) {
     int u = user_logged_with_uid(u_ist_id);
     //user nao efetuou AUT para o seu UID com que efetuou login
     if (u != user_been_treat) {
+        if (verbose && v != -1) printf("User is not logged in with this UID\n");
+        else if (verbose && v == -1) printf("ERROR openning uid login file");
         free(u_ist_id);
         return rau_status;
     }
 
     //leitura e verificacao do RID
     char* rid = split(message, &input_index, ' ', 5);
-    if (rid == NULL) {
-        free(u_ist_id);
-        free(rid);
-        return rau_status;
-    }
     if (validate_four_digit_number(rid) != 0) {
+        if (verbose) printf("Invalid RID\n");
         free(u_ist_id);
         free(rid);
         return rau_status;
     }
     //verifica se o RID existe para o UID e se nao exitir RID entao devolve RAU 0, como em todos os outros casos de erro nesta funcao
     if (!check_rid_exists(rid, u_ist_id)) {
+        if (verbose) printf("RID %s do not exists for UID %s\n", rid, u_ist_id);
         free(u_ist_id);
         free(rid);
         return rau_status;    
@@ -812,12 +904,12 @@ char* check_VC(char* message, int i) {
 
     char* vc = split(message, &input_index, '\n', 5);
     if(validate_four_digit_number(vc) != 0) {
+        if (verbose) printf("Invalid VC\n");
         free(u_ist_id);
         free(rid);
         free(vc);
         return rau_status;
     }
-    printf("verifica o vc\n");
     int request_index = get_request_index(rid, u_ist_id, 0);
     if (strcmp(users_requests[request_index]->vc, vc) == 0) {
         //verifica se o tid ja foi criado
@@ -831,7 +923,6 @@ char* check_VC(char* message, int i) {
             users_requests[request_index]->tid = (char*) malloc(sizeof(char) * (TID_SIZE + 1));
             strcpy(users_requests[request_index]->tid, tid);
             free(tid);
-            printf("tid adicionado: %s\n", users_requests[request_index]->tid);
         }
         //caso ja tenha um tid mantem se o mesmo nao se altera
         else {
@@ -839,7 +930,8 @@ char* check_VC(char* message, int i) {
         }
         
     }
-    printf("request index: %d\n", request_index);
+    if (verbose && strcmp(rau_status, failed) == 0) printf("Incorrect validation code\n");
+    if (verbose && strcmp(rau_status, failed) != 0) printf("Tid generated successfully\n");
     free(u_ist_id);
     free(rid);
     free(vc);
@@ -849,15 +941,11 @@ char* check_VC(char* message, int i) {
 char* vld_operation(char* message, int i) {
     int input_index = i;
     char err[5] = "ERR\n\0";
-    char* cnf_answer = (char*) malloc(sizeof(char) * (17 + FILE_NAME_SIZE + 1));
+    char* cnf_answer = (char*) malloc(sizeof(char) * (17 + FILE_NAME_SIZE + 2));
     
     char* u_ist_id = split(message, &input_index, ' ', 6); 
-    if (u_ist_id == NULL) {
-        free(u_ist_id);
-        strcpy(cnf_answer, err);
-        return cnf_answer;
-    }
     if (validate_u_ist_id(u_ist_id) != 0) {
+        if (verbose) printf("Invalid UID\n");
         free(u_ist_id);
         strcpy(cnf_answer, err);
         return cnf_answer;
@@ -866,6 +954,7 @@ char* vld_operation(char* message, int i) {
     int v = UID_exists(u_ist_id);
 
     if(!v) {
+        if (verbose) printf("UID not registered on server\n");
         strcpy(cnf_answer, err);
         free(u_ist_id);
         return cnf_answer;
@@ -873,43 +962,93 @@ char* vld_operation(char* message, int i) {
 
     //leitura do tid e validacao
     char* tid = split(message, &input_index, '\n', 5);
-    printf("tid: %s", tid);
-    if (tid == NULL) {
-        strcpy(cnf_answer, err);
-        free(u_ist_id);
-        free(tid);
-        return cnf_answer;
-    }
     if (validate_tid(tid) != 0) {
+        if (verbose) printf("Invalid TID\n");
         strcpy(cnf_answer, err);
         free(u_ist_id);
         free(tid);
         return cnf_answer;
     }
     //verifica se o tid é igual para algum request deste u_ist_id
-    printf("olaaa\n");
     v = tid_exists_for_uid(u_ist_id, tid);
-    printf("v: %d", v);
     if (v == -1) {
+        if (verbose) printf("Incorrect TID\n");
         sprintf(cnf_answer, "CNF %s %s E\n", u_ist_id, tid);
     }
     else {
+        if (verbose) printf("Correct TID, successful validation\n");
+        if (strcmp(users_requests[v]->fop, "X") == 0)
+            logout_user(u_ist_id);
         int f = validate_fop(users_requests[v]->fop);
         if (f == 2)
             sprintf(cnf_answer, "CNF %s %s %s %s\n", u_ist_id, tid, users_requests[v]->fop, users_requests[v]->fname);
         else if (f == 1)
             sprintf(cnf_answer, "CNF %s %s %s\n", u_ist_id, tid, users_requests[v]->fop);
     }
-    printf("cnf message: %s", cnf_answer);
+   
     free(u_ist_id);
     free(tid);
     return cnf_answer;
 }
 
-char* treatMessage(char* message) {
+char* unregist_UID(char* message, int i) {
+    int input_index = i;
+    char ok[8] = "RUN OK\n\0"; // deu ok
+    char nok[9] = "RUN NOK\n\0";  //deu nok
+    char* run_status = (char*) malloc(sizeof(char) * 9);
+    strcpy(run_status, nok);
+
+    char* u_ist_id = split(message, &input_index, ' ', 6);
+    if (validate_u_ist_id(u_ist_id) != 0) {
+        if (verbose) printf("Invalid uid\n");
+        free(u_ist_id);
+        return run_status;
+    }
+
+    char* password = split(message, &input_index, ' ', 9);
+    if (validate_password(password) != 0) {
+        if (verbose) printf("Invalid password\n");
+        free(u_ist_id);
+        free(password);
+        return run_status;
+    }
+
+    int v = UID_exists(u_ist_id);
+    if (!v){
+        if (verbose) printf("UID not registered on server\n");
+        free(u_ist_id);
+        free(password);
+        return run_status;
+    }
+    else {
+        if (equal_passwords(u_ist_id, password)) {
+            strcpy(run_status, ok);
+            logout_user(u_ist_id);
+            delete_uid_files(u_ist_id);
+            if (verbose) printf("UID deleted from AS server successfuly\n");
+        }
+        else 
+            if (verbose) printf("Incorrect password\n");
+    }
+
+    free(u_ist_id);
+    free(password);
+    return run_status;
+
+}
+
+char* treat_udp_message(char* message) {
     int input_index = 0;
+    char err[5] = "ERR\n\0";
 
     char* action = split(message, &input_index, ' ', 4);
+    if (action == NULL) {
+        if (verbose) printf("Invalid action\n");
+        free(action);
+        char* answer = (char*) malloc(sizeof(char) * 4);
+        strcpy(answer, err);
+        return answer;
+    }
 
     char reg[4] = "REG\0";
     if (strcmp(action, reg) == 0) {
@@ -917,6 +1056,42 @@ char* treatMessage(char* message) {
         free(action);
         return answer;
         //trata de verificar o REG
+    }
+
+    char unr[4] = "UNR\0";
+    if (strcmp(action, unr) == 0) {
+        char* answer = unregist_UID(message, input_index);
+        free(action);
+        return answer;
+        //trata a operacao unr
+    }
+
+    char vld[4] = "VLD\0";
+    if (strcmp(action, vld) == 0) {
+        char* answer = vld_operation(message, input_index);
+        free(action);
+        return answer;
+        //trata a operacao vld
+    }
+
+    //nenhuma operacao valida
+    if (verbose) printf("Invalid action\n");
+    char* answer = (char*) malloc(sizeof(char) * 5);
+    strcpy(answer, err);
+    return answer;
+}
+
+char* treat_tcp_message(char* message) {
+    int input_index = 0;
+    char err[5] = "ERR\n\0";
+
+    char* action = split(message, &input_index, ' ', 4);
+    if (action == NULL) {
+        if (verbose) printf("Invalid action\n");
+        free(action);
+        char* answer = (char*) malloc(sizeof(char) * 4);
+        strcpy(answer, err);
+        return answer;
     }
 
     char log[4] = "LOG\0";
@@ -943,18 +1118,9 @@ char* treatMessage(char* message) {
         //trata a operacao aut
     }
 
-    char vld[4] = "VLD\0";
-    if (strcmp(action, vld) == 0) {
-        printf("------------%s----------------", message);
-        char* answer = vld_operation(message, input_index);
-        free(action);
-        return answer;
-        //trata a operacao vld
-    }
-
-    //nenhuma operacao valida
-    char err[4] = "ERR\0";
-    char* answer = (char*) malloc(sizeof(char) * 4);
+     //nenhuma operacao valida
+    if (verbose) printf("Invalid action\n");
+    char* answer = (char*) malloc(sizeof(char) * 5);
     strcpy(answer, err);
     return answer;
 }
@@ -996,7 +1162,7 @@ int main(int argc, char **argv) {
     }
 
     if (validate_port(as_port) == -1) {
-        printf("invalid as_port\n");
+        if (verbose) printf("invalid as_port\n");
         free(as_port);
         exit(EXIT_FAILURE);
     }
@@ -1041,7 +1207,7 @@ int main(int argc, char **argv) {
                     n = recvfrom (fd_udp, in_str, BUFFER_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
                     if (n == -1) /*error*/ break; 
                     in_str[n] = 0;
-                    char* answer = treatMessage(in_str);
+                    char* answer = treat_udp_message(in_str);
                     n = sendto (fd_udp, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
                     if (n == -1) /*error*/break;
                 }
@@ -1072,7 +1238,7 @@ int main(int argc, char **argv) {
                             close(users[i]);
                             users[i] = -1;
                         } 
-                        char* answer = treatMessage(in_str);
+                        char* answer = treat_tcp_message(in_str);
                         n = write (users[i], answer, strlen(answer));
                         if(n == -1) {
                             printf("user can't write\n");

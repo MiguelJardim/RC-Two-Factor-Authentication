@@ -611,6 +611,7 @@ char* parse_user_request(char* request_message) {
     result = validate_filename(fname);
     if (result == -1) {
         if (verbose) printf("%s: invalid filename %s for user %s\n", request_type, fname, uid);
+        free(fname);
         free(uid);
         free(tid);
         char* message = (char*) malloc(sizeof(char) * 9);
@@ -721,46 +722,91 @@ void quit(int sig) {
 
 void handle_user(int newfd) {
     char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    int size = BUFFER_SIZE;
+    char* message = (char*) malloc(sizeof(char) * size);
+    int first = TRUE;
 
-    fd_set inputs;
+    fd_set inputs, testfds;
     struct timeval timeout;
     int out_fds, n;
     FD_ZERO(&inputs); 
     FD_SET(newfd,&inputs);
+    int reading = TRUE;
 
-    timeout.tv_sec=10;
-    timeout.tv_usec=0;
-    out_fds=select_timeout(&inputs, &timeout);
-    switch(out_fds) {
-        case 0:
-            // timeout
-            break;
-        case -1:
-            break;
-        default:
-            if(FD_ISSET(newfd,&inputs)) {
-                n = read (newfd, buffer, BUFFER_SIZE);
-                if(n == -1) exit(EXIT_FAILURE);
-                buffer[n] = 0;
-
-                // TODO handle invalid request
-                char* res = parse_user_request(buffer);
-                if (res) {
-                    n=write(newfd, res, strlen(res));
-                    free(res);
-                    if(n==-1) {
-                        // TODO handle error
+    while (reading) {
+        testfds=inputs;
+        timeout.tv_sec=10;
+        timeout.tv_usec=0;
+        out_fds=select_timeout(&testfds, &timeout);
+        switch(out_fds) {
+            case 0:
+                reading = FALSE;
+                break;
+            case -1:
+                reading = FALSE;
+                break;
+            default:
+                if(FD_ISSET(newfd,&testfds)) {
+                    n = read (newfd, buffer, BUFFER_SIZE);
+                    if(n == -1) {
                         close(newfd);
                         free(buffer);
+                        free(message);
+                        printf("user disconected - %d\n", user_index % 100);
                         exit(EXIT_FAILURE);
                     }
+                    buffer[n] = 0;
+                    if (buffer[n-1] == '\n') reading = FALSE;
+
+                    if (!first) {
+                        size *= 2;
+                        message = (char*) realloc(message, sizeof(char) * size);
+                        if (strcat(message, buffer) == NULL) {
+                            close(newfd);
+                            free(buffer);
+                            free(message);
+                            printf("user disconected - %d\n", user_index % 100);
+                            exit(EXIT_FAILURE);
+                        }
+                    }
+                    else {
+                        strcpy(message, buffer);
+                        first = FALSE;
+                    }
+
+                   
+
+                    buffer[0] = 0;
+
+                    break;
                 }
-                break;
-            }
+        }
     }
+
+    free(buffer);
+
+    // TODO handle invalid request
+    char* res = parse_user_request(message);
+    free(message);
+    if (res) {
+        int segment_size = BUFFER_SIZE;
+        int size = (int) strlen(res) + 1;
+        for (int i = 0; i < size; i += n) {
+            if (size - i < segment_size) segment_size = size;
+            n = write(newfd, res+i, segment_size);
+            if(n == -1) {
+                // TODO handle error
+                free(res);
+                close(newfd);
+                printf("user disconected - %d\n", user_index % 100);
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    free(res);
     close(newfd);
     printf("user disconected - %d\n", user_index % 100);
-    free(buffer);
     exit(EXIT_SUCCESS);
 }
 
@@ -807,7 +853,6 @@ int main(int argc, char **argv) {
     if (fd_user == -1) {
         printf("can't create socket\n");
         free(fs_port);
-        close(fd_user);
         exit(EXIT_FAILURE);
     }
 

@@ -23,7 +23,7 @@ const char* DEL = "DEL\0";
 const char* REM = "REM\0";
 
 const char* LST_STATUS = "RST\0";
-const char* RTV_STATUS = "RTT\0";
+const char* RTV_STATUS = "RRT\0";
 const char* UPL_STATUS = "RUP\0";
 const char* DEL_STATUS = "RDL\0";
 const char* REM_STATUS = "RRM\0";
@@ -214,7 +214,7 @@ char* list(char* uid) {
     // try to open directory
     DIR *d;     
     struct dirent *dir;     
-    d=opendir(dirname);     
+    d=opendir(dirname);
     if(!d) {
         if (verbose) {
             printf("can't open directory of user %s\n", uid);
@@ -222,7 +222,7 @@ char* list(char* uid) {
         closedir(d);
         free(dirname);
         char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "LST EOF\n") == -1) {
+        if (sprintf(message, "RLS EOF\n") == -1) {
             free(message);
             return NULL;
         }
@@ -324,7 +324,7 @@ char* retrieve(char* uid, char* fname) {
     if (!fp) {
         free(file_path);
         char* message = (char*) malloc(sizeof(char) * 9);
-        if (sprintf(message, "RTT EOF\n") == -1) {
+        if (sprintf(message, "RRT EOF\n") == -1) {
             free(message);
             fclose(fp);
             return NULL;
@@ -345,7 +345,7 @@ char* retrieve(char* uid, char* fname) {
 
 
     char* message = (char*) malloc(sizeof(char) * (7 + F_SIZE + size + 1));
-    if (sprintf(message, "RTT OK %d %s\n", size, data) == -1) {
+    if (sprintf(message, "RRT OK %d %s\n", size, data) == -1) {
         free(message);
         fclose(fp);
         return NULL;
@@ -794,6 +794,7 @@ void handle_user(int newfd) {
         for (int i = 0; i < size; i += n) {
             if (size - i < segment_size) segment_size = size;
             n = write(newfd, res+i, segment_size);
+            printf("%s\n", res+i);
             if(n == -1) {
                 // TODO handle error
                 free(res);

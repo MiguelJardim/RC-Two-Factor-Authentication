@@ -22,8 +22,8 @@
 #define BUFFER_SIZE 128
 #define MAX_USERS 10
 
-#define AS_IP "193.136.138.142"
-#define AS_PORT "58011"
+#define AS_IP "193.136.128.109"
+#define AS_PORT "58047"
 #define PD_PORT "57047"
 #define FS_PORT "59047"
 

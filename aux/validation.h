@@ -12,5 +12,8 @@ int validate_uid(char* uid);
 int validate_password(char* password);
 int validate_ip(char* ip);
 int validate_port(char* port);
+int validate_rid(char* rid);
+int validate_vc(char* vc);
+int validate_fop(char* fop);
 
 #endif

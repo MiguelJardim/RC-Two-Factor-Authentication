@@ -50,6 +50,10 @@ int validate_tid(char* tid) {
     return 0;
 }
 
+int validate_rid(char* rid) {
+    return validate_tid(rid);
+}
+
 int validate_password(char* password) {
     if (password == NULL) return -1;
 
@@ -138,4 +142,29 @@ int validate_port(char* port) {
     }
     if (port[0] == '0') return -1;
     return 0;
+}
+
+int validate_vc(char* vc) {
+    if (vc == NULL) return -1;
+    if (strlen(vc) != VC_SIZE) return -1;
+    if (vc[0] == '0') return -1;
+
+    for (int i = 1; i < 4; i++) {
+        if (vc[i] < '0' || vc[i] > '9') return -1;
+    }
+
+    return 0;
+}
+
+int validate_fop(char* fop) {
+    if (fop == NULL) return -1;
+    int i = -1;
+    if (strlen(fop) != 1) return -1;
+
+    if (strcmp(fop, "L") == 0 || strcmp(fop, "X") == 0)
+        i = 1;
+    if (strcmp(fop, "R") == 0 || strcmp(fop, "U") == 0 || strcmp(fop, "D") == 0)
+        i = 2;
+    
+    return i;
 }

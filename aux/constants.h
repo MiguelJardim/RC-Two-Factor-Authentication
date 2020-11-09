@@ -10,6 +10,8 @@
 
 #define UID_SIZE 5
 #define TID_SIZE 4
+#define RID_SIZE 4
+#define VC_SIZE 4
 #define PASSWORD_SIZE 8
 #define VLC_SIZE 4
 

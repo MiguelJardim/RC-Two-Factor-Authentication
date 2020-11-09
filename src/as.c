@@ -11,10 +11,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
-#include "../aux/constants.h"
 #include <dirent.h>
+#include <signal.h>
+
+#include "../aux/validation.h"
+#include "../aux/conection.h"
+#include "../aux/constants.h"
+
 #define MAX_REQUESTS 20
 
+int socket_closed = FALSE;
 int verbose = FALSE;
 int no_requests = 0;
 int user_been_treat = -1;
@@ -74,253 +80,21 @@ void update_request(Request* request, char* rid, char* vc, char* fop, char* fnam
     
 }
 
-char* send_udp(char* message, char* ip, char* port) {
-    int fd,errcode;
-    ssize_t n;
-    socklen_t addrlen;
-    struct addrinfo hints,*res;
-    struct sockaddr_in addr;
-    char* buffer = (char*) malloc(sizeof(char) * 128);
-
-    fd = socket(AF_INET,SOCK_DGRAM,0); //UDP socket
-    if(fd == -1) exit(1);
-
-    memset(&hints,0,sizeof hints);
-    hints.ai_family = AF_INET; //IPv4
-    hints.ai_socktype = SOCK_DGRAM; //UDP socket
-
-    errcode = getaddrinfo(ip, port, &hints, &res) ;
-    if(errcode!=0)  exit(1);
-
-    n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
-    if(n==-1) exit(1);
-
-    addrlen = sizeof(addr);
-    n = recvfrom (fd, buffer, 128,0, (struct sockaddr*)&addr, &addrlen);
-    if(n == -1) exit(1);
-
-    freeaddrinfo(res);
-    close (fd);
-
-    return buffer;
-}
-
-int open_udp(char* port) {
-    int fd,errcode;
-    ssize_t n;
-    struct addrinfo hints,*res;
-    
-    fd=socket(AF_INET,SOCK_DGRAM,0);
-    if(fd==-1) /*error*/exit(1);
-
-    memset(&hints,0,sizeof hints);
-    hints.ai_family=AF_INET; // IPv4
-    hints.ai_socktype=SOCK_DGRAM; // UDP socket
-    hints.ai_flags=AI_PASSIVE;
-
-    errcode= getaddrinfo (NULL,port,&hints,&res);
-    if(errcode!=0) /*error*/ exit(1);
-
-    n= bind (fd,res->ai_addr, res->ai_addrlen);
-    if(n==-1) /*error*/ exit(1);
-
-    freeaddrinfo(res);
-    
-    return fd;
-
-}
-
-int connect_tcp(char* ip, char* port) {
-    int fd,errcode;
-    ssize_t n;
-    struct addrinfo hints, *res;
-
-    fd=socket(AF_INET,SOCK_STREAM,0);
-    if (fd==-1) exit(1); //error
-
-    memset(&hints,0,sizeof hints);
-    hints.ai_family=AF_INET;
-    hints.ai_socktype=SOCK_STREAM;
-    errcode= getaddrinfo(ip, port, &hints,&res);
-    if(errcode!=0)/*error*/exit(1);
-
-    n= connect (fd,res->ai_addr,res->ai_addrlen);
-    if(n==-1)/*error*/exit(1);
-
-    freeaddrinfo(res); 
-
-    return fd;
-}
-
-int open_tcp(char* port) {
-    int fd, errcode;
-    ssize_t n;
-    struct addrinfo hints,*res;
-    
-
-    fd = socket(AF_INET,SOCK_STREAM,0);
-    if (fd == -1) exit(1); //error
-
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    errcode = getaddrinfo(NULL, port, &hints, &res);
-    if((errcode) != 0) /*error*/ exit(1);
-
-    n = bind(fd, res->ai_addr, res->ai_addrlen);
-    if(n == -1) /*error*/ exit(1);
-
-    if(listen(fd, 5) == -1) /*error*/ exit(1);
-
-    freeaddrinfo(res);
-    return fd;
-}
-
-int validate_port(char* port) {
-    if (port == NULL) return -1;
-    if (strlen(port) != 5) return -1;
-
-    for (int i = 0; i < 5; i++) {
-        if (port[i] < '0' || port[i] >'9') return -1;
-    }
-    if (port[0] == '0') return -1;
-    return 0;
-}
-
-int validate_u_ist_id(char* uid) {
-    if (uid == NULL) return -1;
-    if (strlen(uid) != 5) return -1;
-    else if (uid[0] == '0') return -1;
-
-    for (int i = 1; i < 5; i++) {
-        if (uid[i] < '0' || uid[i] > '9') return -1;
-    }
-
-    return 0;
-}
-
-int validate_four_digit_number(char* num) {
-    if (num == NULL) return -1;
-    if (strlen(num) != 4) return -1;
-    else if (num[0] == '0') return -1;
-
-    for (int i = 1; i < 4; i++) {
-        if (num[i] < '0' || num[i] > '9') return -1;
-    }
-
-    return 0;
-}
-
-int validate_tid(char* num) {
-    if (num == NULL) return -1;
-    if (strlen(num) != 4) return -1;
-
-    for (int i = 0; i < 4; i++) {
-        if (num[i] < '0' || num[i] > '9') return -1;
-    }
-
-    return 0;  
-}
-
-int validate_fop(char* fop) {
-    if (fop == NULL) return -1;
-    int i = -1;
-    if (strlen(fop) != 1) return -1;
-
-    if (strcmp(fop, "L") == 0 || strcmp(fop, "X") == 0)
-        i = 1;
-    if (strcmp(fop, "R") == 0 || strcmp(fop, "U") == 0 || strcmp(fop, "D") == 0)
-        i = 2;
-    
-    return i;
-}
-
-int validate_password(char* password) {
-    if (password == NULL) return -1;
-    if (strlen(password) != 8) return -1;
-    
-    for (int i = 0; i < 8; i++) {
-        if (!((password[i] >= '0' && password[i] <= '9') || (password[i] >= 'a' && password[i] <= 'z') || (password[i] >= 'A' && password[i] <= 'Z'))) return -1;
-    }
-
-    return 0;
-}
-
-int validate_ip(char* ip) {
-    if (ip == NULL) return -1;
-
-    if (strlen(ip) < 7 || strlen(ip) > IP_MAX_SIZE) return -1;
-
-    char* validated_ip = (char*) malloc(sizeof(char) * (IP_MAX_SIZE + 1));
-    int index = 0;
-    int validated_index = 0;
-    char c = ip[index++];
-    int digits = 0;
-    int dots = 0;
-    
-    while (c != '\0') {
-
-        digits = 0;
-
-        if (c < '0' || c > '9') {
-            free(validated_ip);
-            return -1;
-        }
-
-        if (c != '0') {
-            validated_ip[validated_index++] = c;
-            digits++;  
-        }
-
-        c = ip[index++];
-        while (c != '.' && c != '\0' && digits < 3) {
-            
-            if (c < '0' || c > '9') {
-                free(validated_ip);
-                return -1;
-            }
-
-            validated_ip[validated_index++] = c;
-            digits++;
-
-            c = ip[index++];
-        }
-
-        if (digits == 0) {
-            free(validated_ip);
-            return -1;
-        }
-        else if (c == '.' && dots < 3) {
-            validated_ip[validated_index++] = c;
-            dots++;
-        }
-        else if (c == '\0' && dots == 3) {
-            validated_ip[validated_index++] = c;
-        }
-        else {
-            free(validated_ip);
-            return -1;
-        }
-
-        if (index <= (int) strlen(ip)) c = ip[index++];
-
-    }
-
-    strcpy(ip, validated_ip);
-    free(validated_ip);
-
-    return 0;
-}
-
-char* split(char* input, int* index, char separator, int size) {
+char* split_message(char* input, int* index, char separator, int size) {
     char* output = (char*) malloc(sizeof(char) * size);
     int output_index = 0;
 
-    int i = (int) strlen(input);
-    if (*index >= i)
+    if (input == NULL) {
+        free(output);
         return NULL;
+    }
+
+    int i = (int) strlen(input);
+    if (*index >= i) {
+        free(output);
+        return NULL;
+    }
+        
 
     char c = input[(*index)++];
     if (c == separator) {
@@ -517,14 +291,14 @@ char* regist_UID(char* message, int i) {
     char* reg_status = (char*) malloc(sizeof(char) * 9);
     strcpy(reg_status, nok);
     
-    char* u_ist_id = split(message, &input_index, ' ', 6);
-    if (validate_u_ist_id(u_ist_id) != 0) {
+    char* u_ist_id = split_message(message, &input_index, ' ', UID_SIZE + 1);
+    if (validate_uid(u_ist_id) != 0) {
         if (verbose) printf("Invalid uid\n");
         free(u_ist_id);
         return reg_status;
     }
     
-    char* password = split(message, &input_index, ' ', 9);
+    char* password = split_message(message, &input_index, ' ', PASSWORD_SIZE + 1);
     if (validate_password(password) != 0) {
         if (verbose) printf("Invalid password\n");
         free(u_ist_id);
@@ -532,7 +306,7 @@ char* regist_UID(char* message, int i) {
         return reg_status;
     }
     
-    char* pd_ip = split(message, &input_index, ' ', 16);
+    char* pd_ip = split_message(message, &input_index, ' ', IP_MAX_SIZE + 1);
     if (validate_ip(pd_ip) != 0) {
         if (verbose) printf("Invalid PD IP\n");
         free(u_ist_id);
@@ -541,7 +315,7 @@ char* regist_UID(char* message, int i) {
         return reg_status;
     }
 
-    char* pd_port = split(message, &input_index, '\n', 6);
+    char* pd_port = split_message(message, &input_index, '\n', PORT_SIZE + 1);
     if (validate_port(pd_port) != 0) {
         if (verbose) printf("Invalid PD PORT\n");
         free(u_ist_id);
@@ -627,14 +401,14 @@ char* login_UID(char* message, int i) {
     char* log_status = (char*) malloc(sizeof(char) * 9);
     strcpy(log_status, err);
 
-    char* u_ist_id = split(message, &input_index, ' ', 6);
-    if (validate_u_ist_id(u_ist_id) != 0) {
+    char* u_ist_id = split_message(message, &input_index, ' ', UID_SIZE + 1);
+    if (validate_uid(u_ist_id) != 0) {
         if (verbose) printf("Invalid uid\n");
         free(u_ist_id);
         return log_status;
     }
 
-    char* password = split(message, &input_index, '\n', 9);
+    char* password = split_message(message, &input_index, '\n', PASSWORD_SIZE + 1);
     if (validate_password(password) != 0) {
         if (verbose) printf("Invalid password\n");
         free(u_ist_id);
@@ -681,8 +455,8 @@ char* request_VC(char* message, int i) {
     char err[9] = "RRQ ERR\n\0";    //REQ message incorrectly formatted
     char* rrq_status = (char*) malloc(sizeof(char) * 11);
     
-    char* u_ist_id = split(message, &input_index, ' ', 6); 
-    if (validate_u_ist_id(u_ist_id) != 0) {
+    char* u_ist_id = split_message(message, &input_index, ' ', UID_SIZE + 1); 
+    if (validate_uid(u_ist_id) != 0) {
         if (verbose) printf("Invalid UID\n");
         free(u_ist_id);
         strcpy(rrq_status, euser);
@@ -718,8 +492,8 @@ char* request_VC(char* message, int i) {
     }
 
     //leitura e verificacao do RID
-    char* rid = split(message, &input_index, ' ', 5);
-    if (validate_four_digit_number(rid) != 0) {
+    char* rid = split_message(message, &input_index, ' ', RID_SIZE + 1);
+    if (validate_rid(rid) != 0) {
         if (verbose) printf("Invalid RID\n");
         strcpy(rrq_status, err);
         free(u_ist_id);
@@ -728,7 +502,7 @@ char* request_VC(char* message, int i) {
     }
 
     //leitura e verificacao de FOP
-    char* fop = split(message, &input_index, ' ', 2);
+    char* fop = split_message(message, &input_index, ' ', 2);
     int f = validate_fop(fop);
     if (f == -1) {
         if (verbose) printf("Invalid FOP\n");
@@ -740,7 +514,7 @@ char* request_VC(char* message, int i) {
     }
 
     //leitura de Fname
-    char* fname = split(message, &input_index, '\n', FILE_NAME_SIZE);
+    char* fname = split_message(message, &input_index, '\n', FILE_NAME_SIZE);
     if (f == 2) {
         if (fname == NULL) {
             if (verbose) printf("This operation needs a file name\n");
@@ -816,12 +590,22 @@ char* request_VC(char* message, int i) {
     free(vlc_message_to_pd);
     //verificacao do rvc status
     int index = 0;
-    char* rvc = split(rvc_status, &index, ' ', 4);
-    char* uid = split(rvc_status, &index, ' ', 6);
-    char* status = split(rvc_status, &index, ' ', 4);
+    char* rvc = split_message(rvc_status, &index, ' ', 4);
+    char* uid = split_message(rvc_status, &index, ' ', UID_SIZE + 1);
+    char* status = split_message(rvc_status, &index, ' ', 4);
     char r[4] = "RVC\0";
 
     free(rvc_status);
+    
+    if (rvc == NULL || uid == NULL || status == NULL) {
+        if (verbose) printf("Unexpected RVC message from PD\n");
+        strcpy(rrq_status, epd);
+        free(u_ist_id);
+        free(rvc);
+        free(uid);
+        free(status);
+        return rrq_status;  
+    }
     //verifica se o rvc status é do tipo "RVC UID"
     if (strcmp(rvc, r) != 0 || strcmp(uid, u_ist_id) != 0){
         if (verbose) printf("Unexpected RVC message from PD\n");
@@ -853,8 +637,8 @@ char* check_VC(char* message, int i) {
     char* rau_status = (char*) malloc(sizeof(char)*10);
     strcpy(rau_status, failed);
 
-    char* u_ist_id = split(message, &input_index, ' ', 6); 
-    if (validate_u_ist_id(u_ist_id) != 0) {
+    char* u_ist_id = split_message(message, &input_index, ' ', UID_SIZE + 1); 
+    if (validate_uid(u_ist_id) != 0) {
         if (verbose) printf("Invalid UID\n");
         free(u_ist_id);
         return rau_status;
@@ -887,8 +671,8 @@ char* check_VC(char* message, int i) {
     }
 
     //leitura e verificacao do RID
-    char* rid = split(message, &input_index, ' ', 5);
-    if (validate_four_digit_number(rid) != 0) {
+    char* rid = split_message(message, &input_index, ' ', RID_SIZE + 1);
+    if (validate_rid(rid) != 0) {
         if (verbose) printf("Invalid RID\n");
         free(u_ist_id);
         free(rid);
@@ -902,8 +686,8 @@ char* check_VC(char* message, int i) {
         return rau_status;    
     }
 
-    char* vc = split(message, &input_index, '\n', 5);
-    if(validate_four_digit_number(vc) != 0) {
+    char* vc = split_message(message, &input_index, '\n', VC_SIZE + 1);
+    if(validate_vc(vc) != 0) {
         if (verbose) printf("Invalid VC\n");
         free(u_ist_id);
         free(rid);
@@ -943,8 +727,8 @@ char* vld_operation(char* message, int i) {
     char err[5] = "ERR\n\0";
     char* cnf_answer = (char*) malloc(sizeof(char) * (17 + FILE_NAME_SIZE + 2));
     
-    char* u_ist_id = split(message, &input_index, ' ', 6); 
-    if (validate_u_ist_id(u_ist_id) != 0) {
+    char* u_ist_id = split_message(message, &input_index, ' ', UID_SIZE + 1); 
+    if (validate_uid(u_ist_id) != 0) {
         if (verbose) printf("Invalid UID\n");
         free(u_ist_id);
         strcpy(cnf_answer, err);
@@ -961,7 +745,7 @@ char* vld_operation(char* message, int i) {
     }
 
     //leitura do tid e validacao
-    char* tid = split(message, &input_index, '\n', 5);
+    char* tid = split_message(message, &input_index, '\n', TID_SIZE + 1);
     if (validate_tid(tid) != 0) {
         if (verbose) printf("Invalid TID\n");
         strcpy(cnf_answer, err);
@@ -998,14 +782,14 @@ char* unregist_UID(char* message, int i) {
     char* run_status = (char*) malloc(sizeof(char) * 9);
     strcpy(run_status, nok);
 
-    char* u_ist_id = split(message, &input_index, ' ', 6);
-    if (validate_u_ist_id(u_ist_id) != 0) {
+    char* u_ist_id = split_message(message, &input_index, ' ', UID_SIZE + 1);
+    if (validate_uid(u_ist_id) != 0) {
         if (verbose) printf("Invalid uid\n");
         free(u_ist_id);
         return run_status;
     }
 
-    char* password = split(message, &input_index, ' ', 9);
+    char* password = split_message(message, &input_index, ' ', PASSWORD_SIZE + 1);
     if (validate_password(password) != 0) {
         if (verbose) printf("Invalid password\n");
         free(u_ist_id);
@@ -1041,11 +825,11 @@ char* treat_udp_message(char* message) {
     int input_index = 0;
     char err[5] = "ERR\n\0";
 
-    char* action = split(message, &input_index, ' ', 4);
+    char* action = split_message(message, &input_index, ' ', 4);
     if (action == NULL) {
         if (verbose) printf("Invalid action\n");
         free(action);
-        char* answer = (char*) malloc(sizeof(char) * 4);
+        char* answer = (char*) malloc(sizeof(char) * 5);
         strcpy(answer, err);
         return answer;
     }
@@ -1085,11 +869,11 @@ char* treat_tcp_message(char* message) {
     int input_index = 0;
     char err[5] = "ERR\n\0";
 
-    char* action = split(message, &input_index, ' ', 4);
+    char* action = split_message(message, &input_index, ' ', 4);
     if (action == NULL) {
         if (verbose) printf("Invalid action\n");
         free(action);
-        char* answer = (char*) malloc(sizeof(char) * 4);
+        char* answer = (char*) malloc(sizeof(char) * 5);
         strcpy(answer, err);
         return answer;
     }
@@ -1125,12 +909,18 @@ char* treat_tcp_message(char* message) {
     return answer;
 }
 
+void handle_sock_closed(int sig) { 
+    if (sig == 13) socket_closed = TRUE;
+} 
+
 int main(int argc, char **argv) {
 
     if (argc < 1 || argc > 4) {
         fprintf(stderr, "usage: %s file", argv[0]);
         exit(EXIT_FAILURE);
     }
+
+    signal(SIGPIPE, handle_sock_closed);
 
     users_requests = (Request**) malloc(sizeof(Request*) * MAX_REQUESTS);
 
@@ -1179,7 +969,20 @@ int main(int argc, char **argv) {
     }
 
     int fd_udp = open_udp(as_port);
+    if (fd_udp == -1) {
+        printf("can't create socket\n");
+        free(as_port);
+        close(fd_udp);
+        exit(EXIT_FAILURE);
+    }
+
     int fd_user = open_tcp(as_port);
+    if (fd_user == -1) {
+        printf("can't create socket\n");
+        free(as_port);
+        close(fd_user);
+        exit(EXIT_FAILURE);
+    }
     fd_set inputs, testfds;
     struct timeval timeout;
     int out_fds,n;
@@ -1232,19 +1035,20 @@ int main(int argc, char **argv) {
                         user_been_treat = i;
                         n = read (users[i], in_str, BUFFER_SIZE - 1);
                         in_str[n] = 0;
-                        if(n == -1) {
-                            printf("user can't read\n");
+                        if(socket_closed || n == -1) {
+                            if (verbose) printf("user disconnected\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);
                             users[i] = -1;
                         } 
                         char* answer = treat_tcp_message(in_str);
                         n = write (users[i], answer, strlen(answer));
-                        if(n == -1) {
-                            printf("user can't write\n");
+                        if(socket_closed || n == -1) {
+                            if (verbose) printf("user disconnected\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);
                             users[i] = -1;
+                            socket_closed = FALSE;
                         } 
                     }
                 }

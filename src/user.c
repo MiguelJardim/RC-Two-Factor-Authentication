@@ -8,10 +8,17 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <dirent.h>
+#include <signal.h>
 
-#define FALSE 0
-#define TRUE !(FALSE)
-#define SIZE 30
+#include "../aux/validation.h"
+#include "../aux/conection.h"
+#include "../aux/constants.h"
+
+int running = TRUE;
 
 char* TID;
 char* UID;
@@ -474,7 +481,10 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    int as_ip_f = FALSE, as_port_f = FALSE, fs_ip_f = FALSE, fs_port_f = FALSE;
+    int as_ip_flag = FALSE,
+        as_port_flag = FALSE,
+        fs_ip_flag = FALSE,
+        fs_port_flag = FALSE;
 
     char* as_ip = (char*) malloc(sizeof(char) * 16);
     char* as_port = (char*) malloc(sizeof(char) * 6);
@@ -486,39 +496,23 @@ int main(int argc, char **argv) {
     while ((c = getopt (argc, argv, "n:p:m:q:")) != -1) {
         switch (c) {
         case 'n':
-            as_ip_f = TRUE;
+            as_ip_flag = TRUE;
             strcpy(as_ip, optarg);
             break;
         case 'p':
-            as_port_f = TRUE;
+            as_port_flag = TRUE;
             strcpy(as_port, optarg);
             break;
         case 'm':
-            fs_ip_f = TRUE;
+            fs_ip_flag = TRUE;
             strcpy(fs_ip, optarg);
             break;
         case 'q':
-            fs_port_f = TRUE;
+            fs_port_flag = TRUE;
             strcpy(fs_port, optarg);
             break;
         default:
             abort();
-        }
-    }
-
-    // ip omitido fica o da propria maquina, quer as, quer fs
-
-    // default as_port value
-    if (!as_port_f) {
-        if (sprintf(as_port, "58047") < 0 )  {
-            // TODO erro
-            exit(EXIT_FAILURE);
-        }
-    }
-    if (!fs_port_f) {
-        if (sprintf(fs_port, "59047") < 0 )  {
-            // TODO erro
-            exit(EXIT_FAILURE);
         }
     }
 
@@ -529,6 +523,13 @@ int main(int argc, char **argv) {
         free(fs_ip);
         free(fs_port);
         exit(EXIT_FAILURE);
+    }
+    // default as_port value
+    if (!as_port_flag) {
+        if (sprintf(as_port, "58047") < 0 )  {
+            // TODO erro
+            exit(EXIT_FAILURE);
+        }
     }
     if (validate_port(as_port) == -1) {
         printf("invalid as_port: %s\n", as_port);
@@ -546,6 +547,13 @@ int main(int argc, char **argv) {
         free(fs_port);
         exit(EXIT_FAILURE);
     }
+    // default fs_port value
+    if (!fs_port_flag) {
+        if (sprintf(fs_port, "59047") < 0 )  {
+            // TODO erro
+            exit(EXIT_FAILURE);
+        }
+    }
     if (validate_port(fs_port) == -1) {
         printf("invalid fs_port: %s\n", fs_port);
         free(as_ip);
@@ -555,30 +563,41 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    
+    int fd_as = open_tcp(as_port);
+    int fd_fs = open_tcp(fs_port);
 
-    // printf("%s %s %s %s\n", as_ip, as_port, fs_ip, fs_port);
-/*
-
-    char* message = read_reg_command(in_str, pd_ip, pd_port);
-    if (message == NULL) break;
-
-*/
-    char buffer[128] = "LOG 92528 password\n\0";
-    char* output;
-
-    int fd = connect_tcp(as_ip, as_port);
-
-
-
-
-    int n = write_tcp(fd, buffer);
-    if (n == -1 ) exit(EXIT_FAILURE); // error
-    output = read_tcp(fd);
-     
-    close(fd);
-
-    printf("%s\n", output);
+    if (fd_as == -1) {
+        printf("can't create socket\n");
+        free(as_port);
+        close(fd_as);
+        exit(EXIT_FAILURE);
+    }
+    if (fd_fs == -1) {
+        printf("can't create socket\n");
+        free(fs_port);
+        close(fd_fs);
+        exit(EXIT_FAILURE);
+    }
+    fd_set inputs, testfds;
+    struct timeval timeout;
+    int out_fds,n;
+    FD_ZERO(&inputs); 
+    FD_SET(fd_as, &inputs);
+    FD_SET(fd_fs, &inputs);
+    while(running) {
+        testfds = inputs;
+        timeout.tv_sec = 10;
+        timeout.tv_usec = 0;
+        out_fds = select(FD_SETSIZE, &testfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
+        switch(out_fds) {
+            case 0:
+                break;
+            case -1:
+                perror("select");
+                exit(1);
+            default:
+        }  
+    }
     
     return 0;
 }

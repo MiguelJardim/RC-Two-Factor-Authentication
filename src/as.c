@@ -140,12 +140,22 @@ int equal_passwords(char* u_ist_id, char* password) {
 int UID_exists(char* u_ist_id) {
     DIR* d;
     char dirname[13];
-
+    char reg_filename[28];
     sprintf(dirname, "USERS/%s", u_ist_id);
+    sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id);
     d = opendir(dirname);
     if (d) {
-        closedir(d);
-        return TRUE;
+        if (access(reg_filename, F_OK) != -1) {
+            closedir(d);
+            printf("ola\n");
+            return TRUE;
+        }
+        else {
+            closedir(d);
+            printf("ola2\n");
+            return FALSE;  
+        }
+        
     }
     return FALSE;
 }
@@ -237,7 +247,27 @@ void logout_user(char* u_ist_id) {
     else
         return;
     
-    users_login_info[atoi(user_number)] = 0;
+    users_login_info[atoi(user_number)] = -1;
+    return;
+}
+
+void disconnect_user() {
+    if (users_login_info[user_been_treat] == -1)    return;
+
+    char login_filename[28];
+    sprintf(login_filename, "USERS/%d/%d_login.txt", users_login_info[user_been_treat], users_login_info[user_been_treat]);
+    if (access(login_filename, F_OK) != -1) {
+        if (remove(login_filename) != 0) {
+            if (verbose) printf("Unable to delete login file and logout user\n");
+            return;
+        }   
+    }
+    else {
+        users_login_info[user_been_treat] = -1;
+        return;
+    }
+
+    users_login_info[user_been_treat] = -1;
     return;
 }
 
@@ -267,10 +297,11 @@ void delete_uid_files(char* u_ist_id) {
         if (verbose) printf("inexistent file\n");
         return;
     }
-
+    
     DIR* dir;
     char dirname[13];
     sprintf(dirname, "USERS/%s", u_ist_id);
+
     dir = opendir(dirname);
     if (dir) {
         closedir(dir);
@@ -432,7 +463,7 @@ char* login_UID(char* message, int i) {
             uid_login_file = fopen(login_filename, "w");
             fprintf(uid_login_file, "%d\n", user_been_treat);
             fclose(uid_login_file);
-            users_login_info[user_been_treat] = 1; // significa que este user efetuou um login com um UID
+            users_login_info[user_been_treat] = atoi(u_ist_id); // significa que este user efetuou um login com um UID
             if (verbose) printf("User is now logged in with uid: %s\n", u_ist_id);
         }
         else {
@@ -463,7 +494,7 @@ char* request_VC(char* message, int i) {
         return rrq_status;
     }
     //verifica se o user efetuou login com algum UID
-    if (users_login_info[user_been_treat] == 0) {
+    if (users_login_info[user_been_treat] == -1) {
         if (verbose) printf("User is not logged in\n");
         free(u_ist_id);
         strcpy(rrq_status, elog);
@@ -645,7 +676,7 @@ char* check_VC(char* message, int i) {
     }
 
     //verifica se o user efetuou login com algum UID
-    if (users_login_info[user_been_treat] == 0) {
+    if (users_login_info[user_been_treat] == -1) {
         if (verbose) printf("User is not logged in\n");
         free(u_ist_id);
         return rau_status;
@@ -859,6 +890,7 @@ char* treat_udp_message(char* message) {
     }
 
     //nenhuma operacao valida
+   // printf("action: %s\n", action);
     if (verbose) printf("Invalid action\n");
     char* answer = (char*) malloc(sizeof(char) * 5);
     strcpy(answer, err);
@@ -903,6 +935,7 @@ char* treat_tcp_message(char* message) {
     }
 
      //nenhuma operacao valida
+    //printf("action: %s\n", action);
     if (verbose) printf("Invalid action\n");
     char* answer = (char*) malloc(sizeof(char) * 5);
     strcpy(answer, err);
@@ -925,7 +958,7 @@ int main(int argc, char **argv) {
     users_requests = (Request**) malloc(sizeof(Request*) * MAX_REQUESTS);
 
     for (int i = 0; i < MAX_USERS; i++)
-        users_login_info[i] = 0; //coloca todas as posicoes a 0 para informar que os users que se podem ligar ao as nao efetuaram login, se efetuarem um login bem sucedido entao é colocado a 1 na sua posicao
+        users_login_info[i] = -1; //coloca todas as posicoes a -1 para informar que os users que se podem ligar ao as nao efetuaram login, se efetuarem um login bem sucedido entao é colocado a 1 na sua posicao
         
     char* as_port = (char*) malloc(sizeof(char) * 6);
 
@@ -1039,6 +1072,7 @@ int main(int argc, char **argv) {
                             if (verbose) printf("user disconnected\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);
+                            disconnect_user();
                             users[i] = -1;
                         } 
                         char* answer = treat_tcp_message(in_str);
@@ -1047,6 +1081,7 @@ int main(int argc, char **argv) {
                             if (verbose) printf("user disconnected\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);
+                            disconnect_user();
                             users[i] = -1;
                             socket_closed = FALSE;
                         } 

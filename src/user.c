@@ -596,6 +596,13 @@ int main(int argc, char **argv) {
                 perror("select");
                 exit(1);
             default:
+                if (FD_ISSET(fd_as, &testfds)) {
+                    
+                }
+                if (FD_ISSET(fd_fs, &testfds)) {
+                    
+                }
+                break;
         }  
     }
     

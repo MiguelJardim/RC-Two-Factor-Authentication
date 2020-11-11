@@ -16,19 +16,30 @@
 #include "../aux/validation.h"
 #include "../aux/conection.h"
 #include "../aux/constants.h"
-#define MESSAGE_SIZE 45
 
 int running = TRUE;
-int verbose = FALSE;
 int message_to_as = TRUE;
 int fd_as;
 int fd_fs;
 
-char* TID;
-char* UID;
-char* RID;
-char* FOP;
-char* FNAME;
+typedef struct request {
+    char* uid;
+    char* rid;
+    char* tid;
+    char* fop;
+    char* fname;
+} Request;
+
+Request* request;
+
+char* fs_ip;
+char* fs_port;
+
+int get_file_size(char* path) {
+    struct stat st;
+    stat(path, &st);
+    return (int) st.st_size;
+}
 
 int connect_tcp(char* ip, char* port) {
     int fd,errcode;
@@ -36,16 +47,16 @@ int connect_tcp(char* ip, char* port) {
     struct addrinfo hints, *res;
 
     fd=socket(AF_INET,SOCK_STREAM,0);
-    if (fd==-1) exit(1); //error
+    if (fd==-1) return -1;
 
     memset(&hints,0,sizeof hints);
     hints.ai_family=AF_INET;
     hints.ai_socktype=SOCK_STREAM;
     errcode= getaddrinfo(ip, port, &hints,&res);
-    if(errcode!=0)/*error*/exit(1);
+    if(errcode!=0) return -1;
 
     n= connect (fd,res->ai_addr,res->ai_addrlen);
-    if(n==-1)/*error*/exit(1);
+    if(n==-1) return -1;
 
     freeaddrinfo(res); 
 
@@ -63,7 +74,7 @@ char* login_command(char* input, int index) {
     char ok[9] = "RLO OK\n\0"; 
 
     //user already logged in
-    if (UID != NULL) {
+    if (request->uid != NULL) {
         printf("User already logged in\n");
         return NULL;
     }
@@ -95,7 +106,7 @@ char* login_command(char* input, int index) {
         return NULL;
     }
     // LOG UID pass
-    char* message = (char*) malloc(sizeof(char) * MESSAGE_SIZE);
+    char* message = (char*) malloc(sizeof(char) * BUFFER_SIZE);
     if (sprintf(message, "LOG %s %s\n", uid, password) < 0) {
         free(message);
         free(uid);
@@ -111,7 +122,7 @@ char* login_command(char* input, int index) {
         free(message);
         return NULL; 
     }
-    n = read(fd_as, message, MESSAGE_SIZE);
+    n = read(fd_as, message, BUFFER_SIZE);
     if (n == -1) {
         free(message);
         printf("Cant read message from as\n");
@@ -119,8 +130,8 @@ char* login_command(char* input, int index) {
     }
     message[n] = 0;
     if (strcmp(message, ok) == 0) {
-        if (UID == NULL) UID = (char*) malloc(sizeof(char) * (UID_SIZE + 1));
-        strcpy(UID, uid);
+        if (request->uid == NULL) request->uid = (char*) malloc(sizeof(char) * (UID_SIZE + 1));
+        strcpy(request->uid, uid);
     }
     free(uid);
 
@@ -134,7 +145,7 @@ char* req_command(char* input, int index) {
     char* filename = NULL;
     int rid;
 
-    if (UID == NULL) {
+    if (request->uid == NULL) {
         printf("Not logged in\n");
         return NULL; 
     }
@@ -164,8 +175,8 @@ char* req_command(char* input, int index) {
 
         rid = four_digit_number_generator();
         // REQ UID RID Fop
-        message = (char*) malloc(sizeof(char) * MESSAGE_SIZE);
-        if (sprintf(message, "REQ %s %d %s\n", UID, rid, fop) < 0) {
+        message = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+        if (sprintf(message, "REQ %s %d %s\n", request->uid, rid, fop) < 0) {
             free(message);
             free(fop);
             printf("Sprintf ERROR\n");
@@ -186,6 +197,7 @@ char* req_command(char* input, int index) {
         }
 
         filename = split(input, &input_index, '\n', FILE_NAME_SIZE + 1);
+        printf("%s\n", filename);
         if (filename == NULL) {
             printf("invalid filename\n");
             free(fop);
@@ -195,12 +207,12 @@ char* req_command(char* input, int index) {
 
         rid = four_digit_number_generator();
         // REQ UID RID Fop Fname
-        message = (char*) malloc(sizeof(char) * 45);
-        if (sprintf(message, "REQ %s %d %s %s\n", UID, rid, fop, filename) < 0) {
+        message = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+        if (sprintf(message, "REQ %s %d %s %s\n", request->uid, rid, fop, filename) < 0) {
             free(message);
             free(fop);
             free(filename);
-            printf("Sprintf ERROR\n");
+            printf("sprintf error\n");
             return NULL;
         }
     }
@@ -212,7 +224,7 @@ char* req_command(char* input, int index) {
         free(fop);
         return NULL; 
     }
-    n = read(fd_as, message, MESSAGE_SIZE);
+    n = read(fd_as, message, BUFFER_SIZE);
     if (n == -1) {
         printf("Cant read message from as\n");
         free(message);
@@ -221,13 +233,13 @@ char* req_command(char* input, int index) {
     }
     message[n] = 0;
     if (strcmp(message, ok) == 0) {
-        if (RID == NULL) RID = (char*) malloc(sizeof(char) * (RID_SIZE + 1));
-        sprintf(RID, "%d", rid);
-        if (FOP == NULL) FOP = (char*) malloc(sizeof(char) * 2);
-        sprintf(FOP, "%s", fop);
+        if (request->rid == NULL) request->rid = (char*) malloc(sizeof(char) * (RID_SIZE + 1));
+        sprintf(request->rid, "%d", rid);
+        if (request->fop == NULL) request->fop = (char*) malloc(sizeof(char) * 2);
+        sprintf(request->fop, "%s", fop);
         if (validate_fop(fop) == 2) {
-            if (FNAME == NULL) FNAME = (char*) malloc(sizeof(char) * (FILE_NAME_SIZE + 1));
-            sprintf(FNAME, "%s", filename);
+            if (request->fname == NULL) request->fname = (char*) malloc(sizeof(char) * (FILE_NAME_SIZE + 1));
+            sprintf(request->fname, "%s", filename);
             free(filename);
         }
     }
@@ -239,9 +251,9 @@ char* val_command(char* input, int index) {
     int input_index = index;
     char failed[7] = "RAU 0\n\0";
 
-    if (UID == NULL || RID == NULL) {
-        if (UID == NULL) printf("Not logged in\n");
-        if (RID == NULL) printf("No request made\n");
+    if (request->uid == NULL || request->rid == NULL) {
+        if (request->uid == NULL) printf("Not logged in\n");
+        if (request->rid == NULL) printf("No request made\n");
         return NULL;
     }
 
@@ -258,8 +270,8 @@ char* val_command(char* input, int index) {
         return NULL; 
     }
     // AUT UID RID VC
-    char* message = (char*) malloc(sizeof(char) * MESSAGE_SIZE);
-    if (sprintf(message, "AUT %s %s %s\n", UID, RID, vc) < 0) {
+    char* message = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    if (sprintf(message, "AUT %s %s %s\n", request->uid, request->rid, vc) < 0) {
         free(message);
         free(vc);
         printf("Sprintf ERROR\n");
@@ -273,7 +285,7 @@ char* val_command(char* input, int index) {
         free(message);
         return NULL; 
     }
-    n = read(fd_as, message, MESSAGE_SIZE);
+    n = read(fd_as, message, BUFFER_SIZE);
     if (n == -1) {
         free(message);
         printf("Cant read message from as\n");
@@ -282,10 +294,10 @@ char* val_command(char* input, int index) {
     message[n] = 0;
 
     if (strcmp(message, failed) != 0) {
-        if (TID == NULL) TID = (char*) malloc(sizeof(char) * (TID_SIZE + 1));
+        if (request->tid == NULL) request->tid = (char*) malloc(sizeof(char) * (TID_SIZE + 1));
         int aut_index = 4;
         char* tid = split(message, &aut_index, '\n', TID_SIZE + 1);
-        strcpy(TID, tid);
+        strcpy(request->tid, tid);
         free(tid);
     }
 
@@ -297,7 +309,7 @@ char* list_command() {
 
     // LST UID TID
     char* message = (char*) malloc(sizeof(char) * 45);
-    if (sprintf(message, "LST %s %s\n", UID, TID) < 0) {
+    if (sprintf(message, "LST %s %s\n", request->uid, request->tid) < 0) {
         free(message);
         printf("Sprintf ERROR\n");
         return NULL;
@@ -317,7 +329,7 @@ char* retrieve_command(char* input, int index) {
     }
     // RTV UID TID Fname
     char* message = (char*) malloc(sizeof(char) * 45);
-    if (sprintf(message, "RTV %s %s %s\n", UID, TID, filename) < 0) {
+    if (sprintf(message, "RTV %s %s %s\n", request->uid, request->tid, filename) < 0) {
         free(message);
         free(filename);
         printf("Sprintf ERROR\n");
@@ -327,25 +339,98 @@ char* retrieve_command(char* input, int index) {
     return message;
 }
 
-char* upload_command(char* input, int index) {
+char* upload(char* input, int index) {
+
+    if (request->tid == NULL) {
+        printf("upload failed\n");
+        return NULL;
+    }
+
     int input_index = index;
 
-    char* filename = split(input, &input_index, ' ', 20);
-    if (filename == NULL) {
+    char* filename = split(input, &input_index, '\n', FILE_NAME_SIZE + 1);
+    if (filename == NULL || request->fname == NULL || strcmp(filename, request->fname) != 0) {
         printf("invalid file name\n");
         free(filename);
         return NULL;
     }
-    // UPL UID TID Fname Fsize data
-    char* message = (char*) malloc(sizeof(char) * 45);
-    if (sprintf(message, "UPL %s %s %s\n", UID, TID, filename) < 0) {
+
+    // open file
+    FILE* file = fopen(filename, "rb");
+    if (file == NULL) {
+        free(filename);
+        printf("can't open file\n");
+        return NULL;
+    }
+
+    // get file size
+    unsigned long long int size = get_file_size(filename);
+
+    char* message = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    if (sprintf(message, "UPL %s %s %s %llu ", request->uid, request->tid, filename, size) < 0) {
         free(message);
         free(filename);
-        printf("Sprintf ERROR\n");
+        printf("sprintf error\n");
         return NULL;
     }
     free(filename);
-    return message;
+
+    fd_fs = connect_tcp(fs_ip, fs_port);
+    if (fd_fs == -1) {
+        printf("can't create socket\n");
+        free(fs_port);
+        exit(EXIT_FAILURE);
+    }
+
+    // write the first part of the message
+    int n = write(fd_fs, message, strlen(message));
+    free(message);
+    if(n == -1) {
+        printf("upload failed\n");
+        return NULL;
+    }
+
+    // read and write de file contents on the socket
+    unsigned long long int sent = 0;
+    char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE); 
+    while (sent < size) {
+        n = fread(buffer, sizeof(char), BUFFER_SIZE, file);
+        if (n == -1) {
+            printf("retrive: can't read data\n");
+            fclose(file);
+            free(buffer);
+            return NULL;
+        }
+
+        n = write(fd_fs, buffer, n);
+        if (n == -1) {
+            printf("retrive: can't send data\n");
+            fclose(file);
+            free(buffer);
+            return NULL;
+        }
+        sent += n;
+        buffer[0] = '\0';
+    }
+    free(buffer);
+    
+    // add newline to the end of the message
+    char* end = (char*) malloc(sizeof(char) * 2);
+    if (sprintf(end, "\n") == -1) {
+        free(end);
+        fclose(file);
+        printf("upload failed\n");
+        return NULL;
+    }
+    n = write(fd_fs, end, 2);
+    free(end);
+    if(n == -1) {
+        printf("upload failed\n");
+        return NULL;
+    }
+
+    fclose(file);
+    return NULL;
 }
 
 char* delete_command(char* input, int index) {
@@ -359,7 +444,7 @@ char* delete_command(char* input, int index) {
     }
     // DEL UID TID Fname
     char* message = (char*) malloc(sizeof(char) * 45);
-    if (sprintf(message, "DEL %s %s %s\n", UID, TID, filename) < 0) {
+    if (sprintf(message, "DEL %s %s %s\n", request->uid, request->tid, filename) < 0) {
         free(message);
         free(filename);
         printf("Sprintf ERROR\n");
@@ -374,7 +459,7 @@ char* remove_command() {
     // REM UID TID
     char* message = (char*) malloc(sizeof(char) * 45);
 
-    if (sprintf(message, "DEL %s %s\n", UID, TID) < 0) {
+    if (sprintf(message, "DEL %s %s\n", request->uid, request->tid) < 0) {
         free(message);
         printf("Sprintf ERROR\n");
         return NULL;
@@ -455,7 +540,7 @@ char* treat_command(char* input) {
     if (aux == NULL)
         free(aux);
     else {
-        if ((strcmp(aux, list) != 0) || (strcmp(aux, l) != 0))
+        if ((strcmp(aux, list) != 0) && (strcmp(aux, l) != 0))
             free(aux);
         else {
             //TODO
@@ -465,12 +550,12 @@ char* treat_command(char* input) {
     
     input_index = 0;
     char retrieve[9] = "retrieve\0";
-    char r[2] = "l\0";
+    char r[2] = "r\0";
     aux = split(input, &input_index, ' ', 9);
     if (aux == NULL)
         free(aux);
     else {
-        if ((strcmp(aux, retrieve) != 0) || (strcmp(aux, r) != 0))
+        if ((strcmp(aux, retrieve) != 0) && (strcmp(aux, r) != 0))
             free(aux);
         else {
             //TODO
@@ -479,27 +564,27 @@ char* treat_command(char* input) {
     }
     
     input_index = 0;
-    char upload[7] = "upload\0";
-    char u[2] = "l\0";
+    char upload_str[7] = "upload\0";
+    char u[2] = "u\0";
     aux = split(input, &input_index, ' ', 7);
     if (aux == NULL)
         free(aux);
     else {
-        if ((strcmp(aux, upload) != 0) || (strcmp(aux, u) != 0))
+        if ((strcmp(aux, upload_str) != 0) && (strcmp(aux, u) != 0))
             free(aux);
         else {
-            //TODO
+            char* answer = upload(input, input_index);
             return NULL;
         }
     }  
     
     input_index = 0;
-    char delete[7] = "delete\0", d[2] = "l\0";
+    char delete[7] = "delete\0", d[2] = "d\0";
     aux = split(input, &input_index, ' ', 7);
     if (aux == NULL)
         free(aux);
     else {
-        if ((strcmp(aux, delete) != 0) || (strcmp(aux, d) != 0))
+        if ((strcmp(aux, delete) != 0) && (strcmp(aux, d) != 0))
             free(aux);
         else {
             //TODO
@@ -514,7 +599,7 @@ char* treat_command(char* input) {
     if (aux == NULL)
         free(aux);
     else {
-        if ((strcmp(aux, remove) != 0) || (strcmp(aux, x) != 0))
+        if ((strcmp(aux, remove) != 0) && (strcmp(aux, x) != 0))
             free(aux);
         else {
             //TODO 
@@ -534,22 +619,23 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    TID = NULL;
-    RID = NULL;
-    UID = NULL;
-    FOP = NULL;
-    FNAME = NULL;
+    request = (Request*) malloc(sizeof(Request)); 
+    request->fname = NULL;
+    request->fop = NULL;
+    request->tid = NULL;
+    request->uid = NULL;
+    request->rid = NULL;
 
     int as_ip_flag = FALSE,
         as_port_flag = FALSE,
         fs_ip_flag = FALSE,
         fs_port_flag = FALSE;
 
-    char* as_ip = (char*) malloc(sizeof(char) * 16);
-    char* as_port = (char*) malloc(sizeof(char) * 6);
+    char* as_ip = (char*) malloc(sizeof(char) * (IP_MAX_SIZE + 1));
+    char* as_port = (char*) malloc(sizeof(char) * (PORT_SIZE + 1));
 
-    char* fs_ip = (char*) malloc(sizeof(char) * 16);
-    char* fs_port = (char*) malloc(sizeof(char) * 6);
+    fs_ip = (char*) malloc(sizeof(char) * (IP_MAX_SIZE + 1));
+    fs_port = (char*) malloc(sizeof(char) * (PORT_SIZE + 1));
 
     char c;
     while ((c = getopt (argc, argv, "n:p:m:q:")) != -1) {
@@ -571,7 +657,8 @@ int main(int argc, char **argv) {
             strcpy(fs_port, optarg);
             break;
         default:
-            abort();
+            printf("unexpected arguments\n");
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -579,7 +666,7 @@ int main(int argc, char **argv) {
         strcpy(as_port, AS_PORT);
     }
     if (validate_port(as_port) == -1) {
-        if (verbose) printf("invalid as_port\n");
+        printf("invalid as_port\n");
         free(as_ip);
         free(as_port);
         free(fs_ip);
@@ -604,7 +691,7 @@ int main(int argc, char **argv) {
         strcpy(fs_port, FS_PORT);
     }
     if (validate_port(fs_port) == -1) {
-        if (verbose) printf("invalid as_port\n");
+        printf("invalid as_port\n");
         free(as_ip);
         free(as_port);
         free(fs_ip);
@@ -625,18 +712,9 @@ int main(int argc, char **argv) {
     }
 
     fd_as = connect_tcp(as_ip, as_port);
-    fd_fs = connect_tcp(fs_ip, fs_port);
-
     if (fd_as == -1) {
         printf("can't create socket\n");
         free(as_port);
-        close(fd_as);
-        exit(EXIT_FAILURE);
-    }
-    if (fd_fs == -1) {
-        printf("can't create socket\n");
-        free(fs_port);
-        close(fd_fs);
         exit(EXIT_FAILURE);
     }
 
@@ -648,7 +726,7 @@ int main(int argc, char **argv) {
     FD_SET(0, &inputs);
     while(running) {
         testfds = inputs;
-        timeout.tv_sec = 10;
+        timeout.tv_sec = 1;
         timeout.tv_usec = 0;
         out_fds = select(FD_SETSIZE, &testfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
         switch(out_fds) {
@@ -656,7 +734,7 @@ int main(int argc, char **argv) {
                 break;
             case -1:
                 perror("select");
-                exit(1);
+                exit(EXIT_FAILURE);
             default:
                 if(FD_ISSET(0, &testfds)) {
                     if (( n = read(0, in_str, BUFFER_SIZE))!= 0) {
@@ -676,11 +754,12 @@ int main(int argc, char **argv) {
 
     close(fd_as);
     close(fd_fs);
-    if (TID != NULL) free(TID);
-    if (UID != NULL) free(UID);
-    if (RID != NULL) free(RID);
-    if (FOP != NULL) free(FOP);
-    if (FNAME != NULL) free(FNAME);
+    if (request->uid != NULL) free(request->uid);
+    if (request->tid != NULL) free(request->tid);
+    if (request->rid != NULL) free(request->rid);
+    if (request->fname != NULL) free(request->fname);
+    if (request->fop != NULL) free(request->fop);
+    free(request);
     free(as_ip);
     free(as_port);
     free(fs_ip);

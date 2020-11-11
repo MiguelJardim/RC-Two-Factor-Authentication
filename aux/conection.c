@@ -8,7 +8,7 @@ char* send_udp(char* message, char* ip, char* port) {
     socklen_t addrlen;
     struct addrinfo hints,*res;
     struct sockaddr_in addr;
-    char* buffer = (char*) malloc(sizeof(char) * 128);
+    char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
 
     fd = socket(AF_INET,SOCK_DGRAM,0); //UDP socket
     if(fd == -1) return NULL;

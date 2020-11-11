@@ -12,7 +12,6 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include <dirent.h>
-#include <signal.h>
 
 #include "../aux/validation.h"
 #include "../aux/conection.h"
@@ -25,6 +24,7 @@ int verbose = FALSE;
 int no_requests = 0;
 int user_been_treat = -1;
 int users_login_info[MAX_USERS];
+int running = TRUE;
 
 typedef struct request {
     char *uid;
@@ -147,12 +147,10 @@ int UID_exists(char* u_ist_id) {
     if (d) {
         if (access(reg_filename, F_OK) != -1) {
             closedir(d);
-            printf("ola\n");
             return TRUE;
         }
         else {
             closedir(d);
-            printf("ola2\n");
             return FALSE;  
         }
         
@@ -470,6 +468,8 @@ char* login_UID(char* message, int i) {
             if (verbose) printf("Incorrect password\n");
             strcpy(log_status, nok);        
         }
+        free(u_ist_id);
+        free(password);
         return log_status;
     }
 
@@ -616,6 +616,7 @@ char* request_VC(char* message, int i) {
     char pd_ip[16];
     char pd_port[6];
     fscanf(uid_reg_file, "%s %s", pd_ip, pd_port);
+    fclose(uid_reg_file);
 
     char* rvc_status = send_udp(vlc_message_to_pd, pd_ip, pd_port);
     free(vlc_message_to_pd);
@@ -856,8 +857,11 @@ char* treat_udp_message(char* message) {
     int input_index = 0;
     char err[5] = "ERR\n\0";
 
+    if (strcmp(message, "") == 0) return NULL;
+
     char* action = split_message(message, &input_index, ' ', 4);
     if (action == NULL) {
+        printf("action: %s\n", action);
         if (verbose) printf("Invalid action\n");
         free(action);
         char* answer = (char*) malloc(sizeof(char) * 5);
@@ -890,7 +894,6 @@ char* treat_udp_message(char* message) {
     }
 
     //nenhuma operacao valida
-   // printf("action: %s\n", action);
     if (verbose) printf("Invalid action\n");
     char* answer = (char*) malloc(sizeof(char) * 5);
     strcpy(answer, err);
@@ -900,6 +903,8 @@ char* treat_udp_message(char* message) {
 char* treat_tcp_message(char* message) {
     int input_index = 0;
     char err[5] = "ERR\n\0";
+
+    if (strcmp(message, "") == 0) return NULL;
 
     char* action = split_message(message, &input_index, ' ', 4);
     if (action == NULL) {
@@ -935,7 +940,6 @@ char* treat_tcp_message(char* message) {
     }
 
      //nenhuma operacao valida
-    //printf("action: %s\n", action);
     if (verbose) printf("Invalid action\n");
     char* answer = (char*) malloc(sizeof(char) * 5);
     strcpy(answer, err);
@@ -946,6 +950,10 @@ void handle_sock_closed(int sig) {
     if (sig == 13) socket_closed = TRUE;
 } 
 
+void close_server(int sig) {
+    if (sig == 2) running = FALSE;
+}
+
 int main(int argc, char **argv) {
 
     if (argc < 1 || argc > 4) {
@@ -954,13 +962,14 @@ int main(int argc, char **argv) {
     }
 
     signal(SIGPIPE, handle_sock_closed);
+    signal(SIGINT, close_server);
 
     users_requests = (Request**) malloc(sizeof(Request*) * MAX_REQUESTS);
 
     for (int i = 0; i < MAX_USERS; i++)
         users_login_info[i] = -1; //coloca todas as posicoes a -1 para informar que os users que se podem ligar ao as nao efetuaram login, se efetuarem um login bem sucedido entao é colocado a 1 na sua posicao
         
-    char* as_port = (char*) malloc(sizeof(char) * 6);
+    char* as_port = (char*) malloc(sizeof(char) * (PORT_SIZE + 1));
 
     int flagPort = FALSE;
 
@@ -1023,7 +1032,7 @@ int main(int argc, char **argv) {
     FD_ZERO(&inputs); 
     FD_SET(fd_udp, &inputs);
     FD_SET(fd_user, &inputs);
-    while(TRUE) {
+    while(running) {
         testfds = inputs;
         timeout.tv_sec = 10;
         timeout.tv_usec = 0;
@@ -1041,11 +1050,23 @@ int main(int argc, char **argv) {
                     socklen_t addrlen = sizeof(addr);
                     ssize_t n;
                     n = recvfrom (fd_udp, in_str, BUFFER_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
-                    if (n == -1) /*error*/ break; 
+                    if (n == -1) {
+                        if (verbose)
+                            printf("cant send message to PD\n");
+                        break;
+                    }
                     in_str[n] = 0;
                     char* answer = treat_udp_message(in_str);
-                    n = sendto (fd_udp, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
-                    if (n == -1) /*error*/break;
+                    if (answer != NULL) {
+                        n = sendto (fd_udp, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
+                        if (n == -1) {
+                            if (verbose) 
+                                printf("cant send message to PD\n");
+                            break;
+                        }
+                        
+                    }
+                    free(answer);
                 }
                 if (FD_ISSET(fd_user, &testfds)) {
                     if (verbose) printf("read tcp\n");
@@ -1074,10 +1095,11 @@ int main(int argc, char **argv) {
                             close(users[i]);
                             disconnect_user();
                             users[i] = -1;
+                            break;
                         } 
                         char* answer = treat_tcp_message(in_str);
-                        n = write (users[i], answer, strlen(answer));
-                        if(socket_closed || n == -1) {
+                        if (answer != NULL) n = write (users[i], answer, strlen(answer));
+                        if (socket_closed || n == -1) {
                             if (verbose) printf("user disconnected\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);
@@ -1085,30 +1107,33 @@ int main(int argc, char **argv) {
                             users[i] = -1;
                             socket_closed = FALSE;
                         } 
+                        free(answer);
                     }
                 }
                 break;
         }
     }
 
-//apaga os ficheiros e diretorios, esta comentado só para conseguir ver se esta a criar bem os diretorios, na versao final vai estar a funcionar
-  /*  for (int i = 0; i < no_UIDs; i++) {
-        char aux[28];
-        sprintf(aux, "USERS/UID%d/UID%d_pass.txt", i + 1, i + 1);
-        remove(aux);
-        sprintf(aux, "USERS/UID%d/UID%d_reg.txt", i + 1, i + 1);
-        remove(aux);
-        sprintf(aux, "USERS/UID%d", i + 1);
-        rmdir(aux);
+    for (int i = 0; i < no_requests; i++) {
+        free(users_requests[i]->uid);
+        free(users_requests[i]->rid);
+        free(users_requests[i]->vc);
+        free(users_requests[i]->fop);
+        if (users_requests[i]->tid != NULL) free(users_requests[i]->tid);
+        if (users_requests[i]->fname != NULL) free(users_requests[i]->fname);
+        free(users_requests[i]);
     }
+    free(users_requests);
 
-    if (stat("USERS", &st) == 0) {
-        rmdir("USERS");
+    for (int i = 0; i < MAX_USERS; i++) {
+        if (users[i] != -1)
+            close(users[i]);
     }
-    */
+    free(as_port);
+    free(in_str);
+    free(users);
+    close(fd_udp);
+    close(fd_user);
 
     return 0;
-
-
-
 }

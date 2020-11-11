@@ -5,7 +5,7 @@ CFLAGS =-g -Wall -Wextra -I../
 # https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
 .PHONY: all clean run
 
-all: pd fs as
+all: pd fs as user
 
 pd: pd.c ../aux/validation.c ../aux/conection.c
 	$(CC) $(CFLAGS) pd.c -o pd ../aux/validation.c ../aux/conection.c
@@ -15,6 +15,9 @@ fs: fs.c ../aux/validation.c ../aux/conection.c
 
 as: as.c ../aux/validation.c ../aux/conection.c
 	$(CC) $(CFLAGS) as.c -o as ../aux/validation.c ../aux/conection.c
+
+user: user.c ../aux/validation.c ../aux/conection.c
+	$(CC) $(CFLAGS) user.c -o user ../aux/validation.c ../aux/conection.c
 
 clean:
 	@echo Cleaning...

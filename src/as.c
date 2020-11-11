@@ -545,7 +545,7 @@ char* request_VC(char* message, int i) {
     }
 
     //leitura de Fname
-    char* fname = split_message(message, &input_index, '\n', FILE_NAME_SIZE);
+    char* fname = split_message(message, &input_index, '\n', FILE_NAME_SIZE + 1);
     if (f == 2) {
         if (fname == NULL) {
             if (verbose) printf("This operation needs a file name\n");

@@ -238,24 +238,32 @@ char* list(char* uid) {
     int count = 0;
     size_t size = (4 + FILE_NAME_SIZE + 2);
     char* message = (char*) malloc(sizeof(char) * size);
-    if (sprintf(message, "RLS") == -1) {
-        closedir(d);
-        free(message);
-        return NULL;
-    }
+    int first = TRUE;
     while((dir=readdir(d)) !=NULL) {      
         if (strcmp(dir->d_name, ignore_1) != 0 && strcmp(dir->d_name, ignore_2) != 0) {
             // realloc message if the already allocated memory is not enough
-            if (strlen(message) + strlen(dir->d_name) + F_SIZE + 2 >= size) {
+            if (!first && (strlen(message) + strlen(dir->d_name) + F_SIZE + 2 >= size)) {
                 message = (char*) realloc(message, size * 2);
                 size *= 2;
             }
+
             // add file name to the message that will be sent to the user
-            if (strcat(message, " ") == NULL) {
-                closedir(d);
-                free(message);
-                return NULL;
+            if (first) {
+                first = FALSE;
+                if (sprintf(message, " ") == -1) {
+                    closedir(d);
+                    free(message);
+                    return NULL;
+                }
             }
+            else {
+                if (strcat(message, " ") == NULL) {
+                    closedir(d);
+                    free(message);
+                    return NULL;
+                }
+            }
+            
             if (strcat(message, dir->d_name) == NULL) {
                 closedir(d);
                 free(message);
@@ -313,9 +321,25 @@ char* list(char* uid) {
         return NULL;
     }
 
+
+    char* final_message = (char*) malloc(sizeof(char) * (size + 7));
+    if (sprintf(final_message, "RLS %d", count) == -1) {
+        closedir(d);
+        free(final_message);
+        free(message);
+        return NULL;
+    }
+    if (strcat(final_message, message) == NULL) {
+        closedir(d);
+        free(message);
+        free(final_message);
+        return NULL;
+    }
+    free(message);
+
     closedir(d);
       
-    return message;
+    return final_message;
 }
 
 char* retrieve(char* uid, char* fname, int fd) {
@@ -323,52 +347,64 @@ char* retrieve(char* uid, char* fname, int fd) {
     char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1 + strlen(fname) + 1));
     sprintf(file_path, "USERS/%s/%s", uid, fname);
 
-    int file = open(file_path, O_RDONLY);
-    if (file == -1) {
+    FILE* file = fopen(file_path, "rb");
+    if (file == NULL) {
         free(file_path);
         char* message = (char*) malloc(sizeof(char) * 9);
         if (sprintf(message, "RRT EOF\n") == -1) {
             free(message);
-            close(file);
+            fclose(file);
             return NULL;
         }
-        close(file);
+        fclose(file);
         return message;
     }
-    int n = 0;
+
     unsigned long long int size = get_file_size(file_path);
+    printf("file size:-%llu-\n", size);
     free(file_path);
     int message_size = 7 + F_SIZE + 2;
     char* message = (char*) malloc(sizeof(char) * message_size);
     if (sprintf(message, "RRT OK %llu ", size) == -1) {
         free(message);
-        close(file);
+        fclose(file);
         return NULL;
     }
-    else {
-        int n = write(fd, message, strlen(message));
-        free(message);
-        if(n == -1) {
-            return NULL;
-        }
-    }   
-
-    long long int sent = sendfile(file, fd, NULL, size);
-    unsigned long long int total = n;
-    while (total < size) {
-        if (sent == -1) {
-            close(file);
-            return NULL;
-        }
-        total += sent;
-        sent = sendfile(file, fd, NULL, size);
+ 
+    int n = write(fd, message, strlen(message));
+    free(message);
+    if(n == -1) {
+        return NULL;
     }
 
+    unsigned long long int sent = 0;
+    char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE); 
+    while (sent < size) {
+        n = fread(buffer, sizeof(char), BUFFER_SIZE, file);
+        if (n == -1) {
+            if (verbose) printf("retrive: can't read data %s\n", uid);
+            fclose(file);
+            free(buffer);
+            return NULL;
+        }
+
+        n = write(fd, buffer, n);
+        if (n == -1) {
+            if (verbose) printf("retrive: can't send data %s\n", uid);
+            fclose(file);
+            free(buffer);
+            return NULL;
+        }
+        sent += n;
+        buffer[0] = '\0';
+    }
+    free(buffer);
+    
     // add newline to the end of the message
     char* end = (char*) malloc(sizeof(char) * 2);
     if (sprintf(end, "\n") == -1) {
         free(end);
-        close(file);
+        fclose(file);
         return NULL;
     }
     n = write(fd, end, 2);
@@ -377,7 +413,7 @@ char* retrieve(char* uid, char* fname, int fd) {
         return NULL;
     }
 
-    close(file);
+    fclose(file);
 
     return NULL;
 }
@@ -435,6 +471,7 @@ char* upload(char* uid, char* fname, char* data, int data_size, unsigned long lo
         return NULL;
     }
 
+    if (data_size > (int) size) data_size -= 1;
     if (fwrite(data, 1, data_size, fp) == 0) {
         if (verbose) printf("upload: can't write file for user %s\n", uid);
         fclose(fp);
@@ -446,7 +483,7 @@ char* upload(char* uid, char* fname, char* data, int data_size, unsigned long lo
     unsigned long long int received = data_size;
     char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
     while (received < size) {
-        n = read(fd, buffer, BUFFER_SIZE - 1);
+        n = read(fd, buffer, BUFFER_SIZE);
         if(n == -1) {
             if (verbose) printf("upload: can't read data %s\n", uid);
             fclose(fp);
@@ -455,7 +492,8 @@ char* upload(char* uid, char* fname, char* data, int data_size, unsigned long lo
             return NULL;
         }
         received += n;
-        buffer[n] = '\0';
+
+        if (received > size) n = n - (received - size);
 
         if (fwrite(buffer, 1, n, fp) == 0) {
             if (verbose) printf("upload: can't write file for user %s\n", uid);
@@ -514,7 +552,7 @@ char* remove_all(char* uid) {
         if (verbose) printf("can't get directory name for user %s\n", uid);
         free(dirname);
         char* message = (char*) malloc(sizeof(char) * 8);
-        if (sprintf(message, "DEL NOK\n") == -1) {
+        if (sprintf(message, "RRM NOK\n") == -1) {
             free(message);
             return NULL;
         }
@@ -544,7 +582,7 @@ char* remove_all(char* uid) {
 
             if(ret != 0)  {
                 char* message = (char*) malloc(sizeof(char) * 9);
-                if (sprintf(message, "REM NOK\n") == -1) {
+                if (sprintf(message, "RRM NOK\n") == -1) {
                     free(message);
                     return NULL;
                 }        
@@ -558,7 +596,7 @@ char* remove_all(char* uid) {
     if (rmdir(dirname) != 0) {
         free(dirname);
         char* message = (char*) malloc(sizeof(char) * 10);
-        if (sprintf(message, "REM NOK\n") == -1) {
+        if (sprintf(message, "RRM NOK\n") == -1) {
             free(message);
             return NULL;
         }        
@@ -566,8 +604,8 @@ char* remove_all(char* uid) {
     }
     free(dirname);
 
-    char* message = (char*) malloc(sizeof(char) * 9);
-    if (sprintf(message, "REM OK\n") == -1) {
+    char* message = (char*) malloc(sizeof(char) * 8);
+    if (sprintf(message, "RRM OK\n") == -1) {
         free(message);
         return NULL;
     }        
@@ -730,7 +768,6 @@ char* parse_user_request(char* request_message, int message_size, int fd) {
     for (int i = index; i < message_size; i++) {
         data[i-index] = request_message[i];
     }
-    data[message_size - index] = '\0';
 
     // check if size is bigger than the limit
     if (size <= 0 || size > FILE_SIZE || !data) {
@@ -771,7 +808,7 @@ char* parse_user_request(char* request_message, int message_size, int fd) {
 
     free(request_type);
 
-    char* answer = upload(uid, fname, data, message_size - index - 1, size, fd);
+    char* answer = upload(uid, fname, data, message_size - index, size, fd);
     free(uid);
     free(fname);
     free(data);
@@ -818,6 +855,7 @@ void handle_user(int newfd) {
     char* res = parse_user_request(buffer, n, newfd);
     free(buffer);
     if (res) {
+        printf("%s\n", res);
         n = write(newfd, res, strlen(res));
         if(n == -1) {
             // TODO handle error

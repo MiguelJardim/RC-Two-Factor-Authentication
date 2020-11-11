@@ -12,7 +12,6 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include <dirent.h>
-#include <signal.h>
 
 #include "../aux/validation.h"
 #include "../aux/conection.h"
@@ -1100,7 +1099,7 @@ int main(int argc, char **argv) {
                         } 
                         char* answer = treat_tcp_message(in_str);
                         if (answer != NULL) n = write (users[i], answer, strlen(answer));
-                        if(socket_closed || n == -1) {
+                        if (socket_closed || n == -1) {
                             if (verbose) printf("user disconnected\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);

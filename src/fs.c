@@ -382,8 +382,7 @@ char* retrieve(char* uid, char* fname, int fd) {
     return NULL;
 }
 
-char* upload(char* uid, char* fname, char* data, unsigned long long int size, int fd) {
-    printf("%llu\n", size);
+char* upload(char* uid, char* fname, char* data, int data_size, unsigned long long int size, int fd) {
     if (verbose) printf("uploading file %s for user %s\n", fname, uid);
     char* dirname = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1));
     if (sprintf(dirname, "USERS/%s", uid) == -1) {
@@ -436,7 +435,7 @@ char* upload(char* uid, char* fname, char* data, unsigned long long int size, in
         return NULL;
     }
 
-    if (fwrite(data, 1, strlen(data), fp) == 0) {
+    if (fwrite(data, 1, data_size, fp) == 0) {
         if (verbose) printf("upload: can't write file for user %s\n", uid);
         fclose(fp);
         return NULL;
@@ -444,11 +443,10 @@ char* upload(char* uid, char* fname, char* data, unsigned long long int size, in
 
     // read rest of data from socket
     int n = -1;
-    unsigned long long int received = strlen(data);
+    unsigned long long int received = data_size;
     char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
     while (received < size) {
-        if (size - received >= BUFFER_SIZE - 1) n = read(fd, buffer, BUFFER_SIZE - 1);
-        else n = read(fd, buffer, 89);
+        n = read(fd, buffer, BUFFER_SIZE - 1);
         if(n == -1) {
             if (verbose) printf("upload: can't read data %s\n", uid);
             fclose(fp);
@@ -457,10 +455,9 @@ char* upload(char* uid, char* fname, char* data, unsigned long long int size, in
             return NULL;
         }
         received += n;
-        buffer[n] = 0;
+        buffer[n] = '\0';
 
         if (fwrite(buffer, 1, n, fp) == 0) {
-            printf("-%s-%d-%llu\n", buffer, n, size-received);
             if (verbose) printf("upload: can't write file for user %s\n", uid);
             fclose(fp);
             close(fd);
@@ -468,7 +465,7 @@ char* upload(char* uid, char* fname, char* data, unsigned long long int size, in
             return NULL;
         }
 
-        buffer[0] = 0;
+        buffer[0] = '\0';
     }
     free(buffer);
 
@@ -577,7 +574,7 @@ char* remove_all(char* uid) {
     return message;
 }
 
-char* parse_user_request(char* request_message, int fd) {
+char* parse_user_request(char* request_message, int message_size, int fd) {
     int index = 0, result;
     char* request_type = split(request_message, &index, ' ', 4);
     if (validate_request_type(request_type) == -1) {
@@ -729,9 +726,11 @@ char* parse_user_request(char* request_message, int fd) {
     unsigned long long int size = 0;
     if (size_str) size = atoi(size_str);
     free(size_str);
-    /**char* data = (char*) malloc(sizeof(char) * BUFFER_SIZE);
-    sscanf(request_message + index, "%s", data);*/
-    char* data = split(request_message, &index, '\0', BUFFER_SIZE);
+    char* data = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    for (int i = index; i < message_size; i++) {
+        data[i-index] = request_message[i];
+    }
+    data[message_size - index] = '\0';
 
     // check if size is bigger than the limit
     if (size <= 0 || size > FILE_SIZE || !data) {
@@ -772,7 +771,7 @@ char* parse_user_request(char* request_message, int fd) {
 
     free(request_type);
 
-    char* answer = upload(uid, fname, data, size, fd);
+    char* answer = upload(uid, fname, data, message_size - index - 1, size, fd);
     free(uid);
     free(fname);
     free(data);
@@ -810,13 +809,13 @@ void handle_user(int newfd) {
                     printf("user disconected - %d\n", user_index % 100);
                     exit(EXIT_FAILURE);
                 }
-                buffer[n] = 0;
+                buffer[n] = '\0';
             }
             break;
     }
 
     // TODO handle invalid request
-    char* res = parse_user_request(buffer, newfd);
+    char* res = parse_user_request(buffer, n, newfd);
     free(buffer);
     if (res) {
         n = write(newfd, res, strlen(res));

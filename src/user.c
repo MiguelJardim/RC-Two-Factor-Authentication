@@ -19,6 +19,7 @@
 #include "../aux/constants.h"
 
 int running = TRUE;
+int verbose = FALSE;
 
 char* TID;
 char* UID;
@@ -480,7 +481,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s file", argv[0]);
         exit(EXIT_FAILURE);
     }
-
+    int autenticationService = -1;
     int as_ip_flag = FALSE,
         as_port_flag = FALSE,
         fs_ip_flag = FALSE,
@@ -581,6 +582,7 @@ int main(int argc, char **argv) {
     fd_set inputs, testfds;
     struct timeval timeout;
     int out_fds,n;
+    char* in_str = (char*) malloc(sizeof(char) * BUFFER_SIZE);
     FD_ZERO(&inputs); 
     FD_SET(fd_as, &inputs);
     FD_SET(fd_fs, &inputs);
@@ -597,10 +599,52 @@ int main(int argc, char **argv) {
                 exit(1);
             default:
                 if (FD_ISSET(fd_as, &testfds)) {
-                    
+                    if (verbose) printf("read tcp\n");
+                    int newfd;
+                    struct sockaddr_in addr;
+                    socklen_t addrlen;
+                    addrlen = sizeof(addr);
+                    if ((newfd = accept(fd_as, (struct sockaddr*)&addr, &addrlen)) == -1 ) /*error*/ exit(1);
+                    if (n == -1) {
+                        if (verbose)
+                            printf("can't send the message to AS\n");
+                        break;
+                    }
+                    in_str[n] = 0;
+                    char* answer;// = treat_as_message(in_str);
+                    if (answer != NULL) {
+                        n = sendto (fd_as, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
+                        if (n == -1) {
+                            if (verbose) 
+                                printf("can't send the message to AS\n");
+                            break;
+                        }
+                    }
+                    free(answer);                    
                 }
                 if (FD_ISSET(fd_fs, &testfds)) {
-                    
+                    if (verbose) printf("read tcp\n");
+                    int newfd;
+                    struct sockaddr_in addr;
+                    socklen_t addrlen;
+                    addrlen = sizeof(addr);
+                    if ((newfd = accept(fd_fs, (struct sockaddr*)&addr, &addrlen)) == -1 ) /*error*/ exit(1);
+                    if (n == -1) {
+                        if (verbose)
+                            printf("can't send the message to FS\n");
+                        break;
+                    }
+                    in_str[n] = 0;
+                    char* answer;// = treat_as_message(in_str);
+                    if (answer != NULL) {
+                        n = sendto (fd_fs, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
+                        if (n == -1) {
+                            if (verbose) 
+                                printf("can't send the message to FS\n");
+                            break;
+                        }
+                    }
+                    free(answer); 
                 }
                 break;
         }  

@@ -11,7 +11,7 @@ char* split(char* input, int* index, char separator, int size) {
         return NULL;
     }
 
-    while (c != separator && c != EOF) {
+    while (c != separator && c != '\0' && c != EOF) {
         if (output_index == size - 1) {
             free(output);
             return NULL;

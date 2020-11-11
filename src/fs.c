@@ -11,6 +11,9 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <signal.h> 
+#include <sys/sendfile.h>
+#include <fcntl.h>
+
 
 #include "../aux/validation.h"
 #include "../aux/conection.h"
@@ -315,46 +318,71 @@ char* list(char* uid) {
     return message;
 }
 
-char* retrieve(char* uid, char* fname) {
+char* retrieve(char* uid, char* fname, int fd) {
     if (verbose) printf("retrieving file %s for user %s\n", fname, uid);
     char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1 + strlen(fname) + 1));
     sprintf(file_path, "USERS/%s/%s", uid, fname);
 
-    FILE *fp = fopen(file_path, "rb");
-    if (!fp) {
+    int file = open(file_path, O_RDONLY);
+    if (file == -1) {
         free(file_path);
         char* message = (char*) malloc(sizeof(char) * 9);
         if (sprintf(message, "RRT EOF\n") == -1) {
             free(message);
-            fclose(fp);
+            close(file);
             return NULL;
         }
-        fclose(fp);
+        close(file);
         return message;
     }
-
-    int size = get_file_size(file_path);
-    char* data = (char*) malloc(sizeof(char) * (size + 1));
-
-    char* res = fgets(data, size + 1, fp);
-    if (!res) {
-        free(data);
-        fclose(fp);
-        return NULL;
-    }
-
-
-    char* message = (char*) malloc(sizeof(char) * (7 + F_SIZE + size + 1));
-    if (sprintf(message, "RRT OK %d %s\n", size, data) == -1) {
+    int n = 0;
+    unsigned long long int size = get_file_size(file_path);
+    free(file_path);
+    int message_size = 7 + F_SIZE + 2;
+    char* message = (char*) malloc(sizeof(char) * message_size);
+    if (sprintf(message, "RRT OK %llu ", size) == -1) {
         free(message);
-        fclose(fp);
+        close(file);
         return NULL;
     }
-    fclose(fp);
-    return message;
+    else {
+        int n = write(fd, message, strlen(message));
+        free(message);
+        if(n == -1) {
+            return NULL;
+        }
+    }   
+
+    long long int sent = sendfile(file, fd, NULL, size);
+    unsigned long long int total = n;
+    while (total < size) {
+        if (sent == -1) {
+            close(file);
+            return NULL;
+        }
+        total += sent;
+        sent = sendfile(file, fd, NULL, size);
+    }
+
+    // add newline to the end of the message
+    char* end = (char*) malloc(sizeof(char) * 2);
+    if (sprintf(end, "\n") == -1) {
+        free(end);
+        close(file);
+        return NULL;
+    }
+    n = write(fd, end, 2);
+    free(end);
+    if(n == -1) {
+        return NULL;
+    }
+
+    close(file);
+
+    return NULL;
 }
 
-char* upload(char* uid, char* fname, char* data) {
+char* upload(char* uid, char* fname, char* data, int data_size, unsigned long long int size, int fd) {
     if (verbose) printf("uploading file %s for user %s\n", fname, uid);
     char* dirname = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1));
     if (sprintf(dirname, "USERS/%s", uid) == -1) {
@@ -363,7 +391,7 @@ char* upload(char* uid, char* fname, char* data) {
         return NULL;
     }
 
-    struct stat st = {0};
+    struct stat st;
     if (stat(dirname, &st) == -1) {
         if (mkdir(dirname, 0700) == -1) {
             if (verbose) printf("upload: can't create directory for user %s\n", uid);
@@ -373,7 +401,8 @@ char* upload(char* uid, char* fname, char* data) {
     }
 
     // check if the user can upload more files
-    if (number_of_files(dirname) >= 15) {
+    if (number_of_files(dirname) >= MAX_FILES) {
+        free(dirname);
         char* message = (char*) malloc(sizeof(char) * 10);
         if (sprintf(message, "RUP FULL\n") == -1) {
             free(message);
@@ -388,8 +417,7 @@ char* upload(char* uid, char* fname, char* data) {
     sprintf(file_path, "USERS/%s/%s", uid, fname);
 
     // check if file already exists
-    struct stat buffer;
-    if (stat(file_path, &buffer) == 0) {
+    if (stat(file_path, &st) == 0) {
         free(file_path);
         char* message = (char*) malloc(sizeof(char) * 9);
         if (sprintf(message, "RUP DUP\n") == -1) {
@@ -407,10 +435,40 @@ char* upload(char* uid, char* fname, char* data) {
         return NULL;
     }
 
-    if (fputs(data, fp) == EOF) {
+    if (fwrite(data, 1, data_size, fp) == 0) {
         if (verbose) printf("upload: can't write file for user %s\n", uid);
+        fclose(fp);
         return NULL;
     }
+
+    // read rest of data from socket
+    int n = -1;
+    unsigned long long int received = data_size;
+    char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    while (received < size) {
+        n = read(fd, buffer, BUFFER_SIZE - 1);
+        if(n == -1) {
+            if (verbose) printf("upload: can't read data %s\n", uid);
+            fclose(fp);
+            close(fd);
+            free(buffer);
+            return NULL;
+        }
+        received += n;
+        buffer[n] = '\0';
+
+        if (fwrite(buffer, 1, n, fp) == 0) {
+            if (verbose) printf("upload: can't write file for user %s\n", uid);
+            fclose(fp);
+            close(fd);
+            free(buffer);
+            return NULL;
+        }
+
+        buffer[0] = '\0';
+    }
+    free(buffer);
+
     fclose(fp);
 
     char* message = (char*) malloc(sizeof(char) * 8);
@@ -516,7 +574,7 @@ char* remove_all(char* uid) {
     return message;
 }
 
-char* parse_user_request(char* request_message) {
+char* parse_user_request(char* request_message, int message_size, int fd) {
     int index = 0, result;
     char* request_type = split(request_message, &index, ' ', 4);
     if (validate_request_type(request_type) == -1) {
@@ -648,7 +706,7 @@ char* parse_user_request(char* request_message) {
 
         if (strcmp(request_type, RTV) == 0) {
             free(request_type);
-            char* answer = retrieve(uid, fname);
+            char* answer = retrieve(uid, fname, fd);
             free(uid);
             free(fname);
             return answer;
@@ -664,14 +722,18 @@ char* parse_user_request(char* request_message) {
         return NULL;
     }
 
-    char* size_str = split(request_message, &index, ' ', 3);
-    int size = -1;
+    char* size_str = split(request_message, &index, ' ', F_SIZE);
+    unsigned long long int size = 0;
     if (size_str) size = atoi(size_str);
     free(size_str);
-    char* data = split(request_message, &index, '\n', size + 1);
+    char* data = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    for (int i = index; i < message_size; i++) {
+        data[i-index] = request_message[i];
+    }
+    data[message_size - index] = '\0';
 
     // check if size is bigger than the limit
-    if (!size_str || size <= 0 || size > FILE_SIZE || !data) {
+    if (size <= 0 || size > FILE_SIZE || !data) {
         if (verbose) printf("%s: invalid arguments for user %s\n", request_type, uid);
         free(uid);
         free(tid);
@@ -709,7 +771,7 @@ char* parse_user_request(char* request_message) {
 
     free(request_type);
 
-    char* answer = upload(uid, fname, data);
+    char* answer = upload(uid, fname, data, message_size - index - 1, size, fd);
     free(uid);
     free(fname);
     free(data);
@@ -722,86 +784,47 @@ void quit(int sig) {
 
 void handle_user(int newfd) {
     char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
-    int size = BUFFER_SIZE;
-    char* message = (char*) malloc(sizeof(char) * size);
-    int first = TRUE;
 
     fd_set inputs, testfds;
     struct timeval timeout;
     int out_fds, n;
     FD_ZERO(&inputs); 
     FD_SET(newfd,&inputs);
-    int reading = TRUE;
 
-    while (reading) {
-        testfds=inputs;
-        timeout.tv_sec=10;
-        timeout.tv_usec=0;
-        out_fds=select_timeout(&testfds, &timeout);
-        switch(out_fds) {
-            case 0:
-                reading = FALSE;
-                break;
-            case -1:
-                reading = FALSE;
-                break;
-            default:
-                if(FD_ISSET(newfd,&testfds)) {
-                    n = read (newfd, buffer, BUFFER_SIZE);
-                    if(n == -1) {
-                        close(newfd);
-                        free(buffer);
-                        free(message);
-                        printf("user disconected - %d\n", user_index % 100);
-                        exit(EXIT_FAILURE);
-                    }
-                    buffer[n] = 0;
-                    if (buffer[n-1] == '\n') reading = FALSE;
-
-                    if (!first) {
-                        size *= 2;
-                        message = (char*) realloc(message, sizeof(char) * size);
-                        if (strcat(message, buffer) == NULL) {
-                            close(newfd);
-                            free(buffer);
-                            free(message);
-                            printf("user disconected - %d\n", user_index % 100);
-                            exit(EXIT_FAILURE);
-                        }
-                    }
-                    else {
-                        strcpy(message, buffer);
-                        first = FALSE;
-                    }
-
-                   
-
-                    buffer[0] = 0;
-
-                    break;
+    testfds=inputs;
+    timeout.tv_sec=10;
+    timeout.tv_usec=0;
+    out_fds=select_timeout(&testfds, &timeout);
+    switch(out_fds) {
+        case 0:
+            break;
+        case -1:
+            break;
+        default:
+            if(FD_ISSET(newfd,&testfds)) {
+                n = read(newfd, buffer, BUFFER_SIZE - 1);
+                if(n == -1) {
+                    close(newfd);
+                    free(buffer);
+                    printf("user disconected - %d\n", user_index % 100);
+                    exit(EXIT_FAILURE);
                 }
-        }
+                buffer[n] = '\0';
+            }
+            break;
     }
 
-    free(buffer);
-
     // TODO handle invalid request
-    char* res = parse_user_request(message);
-    free(message);
+    char* res = parse_user_request(buffer, n, newfd);
+    free(buffer);
     if (res) {
-        int segment_size = BUFFER_SIZE;
-        int size = (int) strlen(res) + 1;
-        for (int i = 0; i < size; i += n) {
-            if (size - i < segment_size) segment_size = size;
-            n = write(newfd, res+i, segment_size);
-            printf("%s\n", res+i);
-            if(n == -1) {
-                // TODO handle error
-                free(res);
-                close(newfd);
-                printf("user disconected - %d\n", user_index % 100);
-                exit(EXIT_FAILURE);
-            }
+        n = write(newfd, res, strlen(res));
+        if(n == -1) {
+            // TODO handle error
+            free(res);
+            close(newfd);
+            printf("user disconected - %d\n", user_index % 100);
+            exit(EXIT_FAILURE);
         }
     }
 

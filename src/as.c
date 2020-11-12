@@ -17,7 +17,7 @@
 #include "../aux/conection.h"
 #include "../aux/constants.h"
 
-#define MAX_REQUESTS 20
+#define MAX_REQUESTS MAX_USERS
 
 int socket_closed = FALSE;
 int verbose = FALSE;
@@ -41,8 +41,8 @@ Request* new_request(char* uid, char* rid, char* vc, char* fop) {
     Request *request = (Request*) malloc(sizeof(Request));
 
     request->uid = (char*) malloc(sizeof(char) * (UID_SIZE + 1));
-    request->rid = (char*) malloc(sizeof(char) * (TID_SIZE + 1));
-    request->vc = (char*) malloc(sizeof(char) * (TID_SIZE + 1));
+    request->rid = (char*) malloc(sizeof(char) * (RID_SIZE + 1));
+    request->vc = (char*) malloc(sizeof(char) * (VC_SIZE + 1));
     request->fop = (char*) malloc(sizeof(char) * 2);
     
     strcpy(request->uid, uid);

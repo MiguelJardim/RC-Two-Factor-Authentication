@@ -799,6 +799,9 @@ void handle_user(int newfd) {
     signal(SIGPIPE, quit);
 
     char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    char* message = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+    int total = 0;
+    int reading = TRUE;
 
     fd_set inputs, testfds;
     struct timeval timeout;
@@ -806,32 +809,48 @@ void handle_user(int newfd) {
     FD_ZERO(&inputs); 
     FD_SET(newfd,&inputs);
 
-    testfds=inputs;
-    timeout.tv_sec=10;
-    timeout.tv_usec=0;
-    out_fds=select_timeout(&testfds, &timeout);
-    switch(out_fds) {
-        case 0:
-            break;
-        case -1:
-            break;
-        default:
-            if(FD_ISSET(newfd,&testfds)) {
-                n = read(newfd, buffer, BUFFER_SIZE - 1);
-                if(n <= 0 || !running) {
-                    close(newfd);
-                    free(buffer);
-                    printf("user disconected - %d\n", user_index % 100);
-                    exit(EXIT_FAILURE);
+    while (reading) {
+        testfds=inputs;
+        timeout.tv_sec=1;
+        timeout.tv_usec=0;
+        out_fds=select_timeout(&testfds, &timeout);
+        switch(out_fds) {
+            case 0:
+                break;
+            case -1:
+                break;
+            default:
+                if(FD_ISSET(newfd,&testfds)) {
+                    n = read(newfd, buffer, BUFFER_SIZE - total - 1);
+                    if(n <= 0 || !running) {
+                        close(newfd);
+                        free(buffer);
+                        free(message);
+                        printf("user disconected - %d\n", user_index % 100);
+                        exit(EXIT_FAILURE);
+                    }
+                    buffer[n] = '\0';
+                    
+                    for (int i = total; i <= total + n; i++) {
+                        message[i] = buffer[i - total];
+                    }
+                    
+                    total += n;
+                    if (buffer[n - 1] == '\n' || total == BUFFER_SIZE - 1) {
+                        free(buffer);
+                        reading = FALSE;
+                        break;
+                    }
+                    buffer[0] = 0;
                 }
-                buffer[n] = '\0';
-            }
-            break;
+                break;
+        }
     }
+    message[total] = '\0';
 
     // TODO handle invalid request
-    char* res = parse_user_request(buffer, n, newfd);
-    free(buffer);
+    char* res = parse_user_request(message, total, newfd);
+    free(message);
     if (res) {
         n = write(newfd, res, strlen(res));
         if(n <= 0 || !running) {

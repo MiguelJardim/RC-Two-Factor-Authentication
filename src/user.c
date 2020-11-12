@@ -306,6 +306,8 @@ char* val_command(char* input, int index) {
 
 
 char* list_command() {
+    char failed[9] = "RLS EOF\n\0";
+    char error[9] = "RLS ERR\n\0";
 
     // LST UID TID
     char* message = (char*) malloc(sizeof(char) * 45);
@@ -314,7 +316,39 @@ char* list_command() {
         printf("Sprintf ERROR\n");
         return NULL;
     }
+    fd_fs = connect_tcp(fs_ip, fs_port);
 
+    if (fd_fs == -1) {
+        printf("can't create socket\n");
+        free(fs_port);
+        exit(EXIT_FAILURE);
+    }
+
+    int n = write(fd_fs, message, strlen(message));
+
+    if(n == -1) {
+        printf("remove failed\n");
+        return NULL;
+    }
+    //RLS N[ Fname Fsize]*
+    n = read(fd_fs, message, BUFFER_SIZE);
+
+    if (n == -1) {
+        free(message);
+        printf("can't read message from fs\n");
+        return NULL; 
+    }
+    message[n] = 0;
+    if (strcmp(message, failed) == 0) {
+        printf("Request cannot be answered.\n");
+
+    }else if(strcmp(message, error) == 0){
+        printf("Failed list all files.\n");
+        
+    }else{
+        int i = atoi(message[5]);
+        //for(...
+    }
 
 
     return message;

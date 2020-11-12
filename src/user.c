@@ -1118,7 +1118,6 @@ int main(int argc, char **argv) {
             case 0:
                 break;
             case -1:
-                perror("select");
                 exit(EXIT_FAILURE);
             default:
                 if(FD_ISSET(0, &testfds)) {

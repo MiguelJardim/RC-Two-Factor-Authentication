@@ -21,7 +21,6 @@
 
 int socket_closed = FALSE;
 int verbose = FALSE;
-int no_requests = 0;
 int user_been_treat = -1;
 int users_login_info[MAX_USERS];
 int running = TRUE;
@@ -78,6 +77,38 @@ void update_request(Request* request, char* rid, char* vc, char* fop, char* fnam
         request->fname = NULL;
     }
     
+}
+
+int add_request(Request* request) {
+    for (int i = 0; i < MAX_REQUESTS; i++) {
+        if (users_requests[i] == NULL) {
+            users_requests[i] = request;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+void free_request(Request* request) {
+    free(request->uid);
+    free(request->rid);
+    free(request->vc);
+    free(request->fop);
+    if (request->tid != NULL) free(request->tid);
+    if (request->fname != NULL) free(request->fname);
+    free(request);
+}
+
+void remove_request(char* uid) {
+    for (int i = 0; i < MAX_REQUESTS; i++) {
+        if (users_requests[i] != NULL) {
+            if (strcmp(users_requests[i]->uid, uid) == 0) {
+                free_request(users_requests[i]);
+                users_requests[i] = NULL;
+                return;
+            }
+        }
+    }
 }
 
 char* split_message(char* input, int* index, char separator, int size) {
@@ -159,41 +190,50 @@ int UID_exists(char* u_ist_id) {
 }
 
 int check_rid_exists(char* rid, char* u_ist_id) {
-    for (int i = 0; i < no_requests; i++) {
-        if (strcmp(users_requests[i]->uid, u_ist_id) == 0)
-            if (strcmp(users_requests[i]->rid, rid) == 0)
-                return TRUE;
+    for (int i = 0; i < MAX_REQUESTS; i++) {
+        if (users_requests[i] != NULL) {
+            if (strcmp(users_requests[i]->uid, u_ist_id) == 0)
+                if (strcmp(users_requests[i]->rid, rid) == 0)
+                    return TRUE;
+        }
+        
     }
     return FALSE;
 }
 
 int tid_exists_for_uid(char* u_ist_id, char* tid) {
     
-    for (int i = 0; i < no_requests; i++) {
-        if (strcmp(users_requests[i]->uid, u_ist_id) == 0) {
-            if (users_requests[i]->tid != NULL && strcmp(users_requests[i]->tid, tid) == 0)
-                return i;
+    for (int i = 0; i < MAX_REQUESTS; i++) {
+        if (users_requests[i] != NULL) {
+            if (strcmp(users_requests[i]->uid, u_ist_id) == 0) {
+                if (users_requests[i]->tid != NULL && strcmp(users_requests[i]->tid, tid) == 0)
+                    return i;
+            }
         }
+        
     }
     return -1;
 }
 
 int get_request_index(char* n_id, char* u_ist_id, int option) {
     //se option for 0, entao quer usar o rid, se for 1 quer usar o tid
-    for (int i = 0; i < no_requests; i++) {
-        if (strcmp(users_requests[i]->uid, u_ist_id) == 0) {
-            if (option == 0) {
-                if (strcmp(users_requests[i]->rid, n_id) == 0)
+    for (int i = 0; i < MAX_REQUESTS; i++) {
+        if (users_requests[i] != NULL) {
+            if (strcmp(users_requests[i]->uid, u_ist_id) == 0) {
+                if (option == 0) {
+                    if (strcmp(users_requests[i]->rid, n_id) == 0)
+                        return i;
+                }
+                else if (option == 1) {
+                    if (strcmp(users_requests[i]->tid, n_id) == 0)
+                        return i;
+                }
+                else if (option == 2) {
                     return i;
-            }
-            else if (option == 1) {
-                if (strcmp(users_requests[i]->tid, n_id) == 0)
-                    return i;
-            }
-            else if (option == 2) {
-                return i;
+                }
             }
         }
+        
     }
     return -1;
 }
@@ -252,6 +292,11 @@ void logout_user(char* u_ist_id) {
 void disconnect_user() {
     if (users_login_info[user_been_treat] == -1)    return;
 
+    char* uid = (char*) malloc(sizeof(char) * (UID_SIZE + 1));
+    sprintf(uid, "%d", users_login_info[user_been_treat]);
+
+    remove_request(uid);
+    free(uid);
     char login_filename[28];
     sprintf(login_filename, "USERS/%d/%d_login.txt", users_login_info[user_been_treat], users_login_info[user_been_treat]);
     if (access(login_filename, F_OK) != -1) {
@@ -402,7 +447,12 @@ char* regist_UID(char* message, int i) {
 
         if (uid_pass_file == NULL || uid_reg_file == NULL) {      
             if (verbose) printf("Unable to create/open file.\n");
-            exit(EXIT_FAILURE);
+            free(u_ist_id);
+            free(password);
+            free(pd_ip);
+            free(pd_port);
+            strcpy(reg_status, nok);
+            return reg_status;
         }
 
         fprintf(uid_pass_file, "%s\n", password);
@@ -598,7 +648,17 @@ char* request_VC(char* message, int i) {
             request->fname = (char*) malloc(sizeof(char) * (strlen(fname) + 1));
             strcpy(request->fname, fname);
         }
-        users_requests[no_requests++] = request; 
+        if (add_request(request) == -1) {
+            if (verbose) printf("Max requests reached\n");
+            free(u_ist_id);
+            free(rid);
+            free(fop);
+            free(fname);
+            free(vc_str);
+            free(rid);
+            strcpy(rrq_status, err);
+            return rrq_status;
+        }
     }
     //uid ja tem um request
     else {
@@ -975,6 +1035,9 @@ int main(int argc, char **argv) {
 
     users_requests = (Request**) malloc(sizeof(Request*) * MAX_REQUESTS);
 
+    for (int i = 0; i < MAX_REQUESTS; i++)
+        users_requests[i] = NULL;
+
     for (int i = 0; i < MAX_USERS; i++)
         users_login_info[i] = -1; //coloca todas as posicoes a -1 para informar que os users que se podem ligar ao as nao efetuaram login, se efetuarem um login bem sucedido entao é colocado a 1 na sua posicao
         
@@ -1005,6 +1068,7 @@ int main(int argc, char **argv) {
     if (validate_port(as_port) == -1) {
         if (verbose) printf("invalid as_port\n");
         free(as_port);
+        free(users_requests);
         exit(EXIT_FAILURE);
     }
 
@@ -1023,6 +1087,7 @@ int main(int argc, char **argv) {
     if (fd_udp == -1) {
         printf("can't create socket\n");
         free(as_port);
+        free(users_requests);
         close(fd_udp);
         exit(EXIT_FAILURE);
     }
@@ -1031,6 +1096,7 @@ int main(int argc, char **argv) {
     if (fd_user == -1) {
         printf("can't create socket\n");
         free(as_port);
+        free(users_requests);
         close(fd_user);
         exit(EXIT_FAILURE);
     }
@@ -1043,15 +1109,14 @@ int main(int argc, char **argv) {
     FD_SET(fd_user, &inputs);
     while(running) {
         testfds = inputs;
-        timeout.tv_sec = 10;
+        timeout.tv_sec = 1;
         timeout.tv_usec = 0;
         out_fds = select(FD_SETSIZE, &testfds, (fd_set *)NULL, (fd_set *)NULL, &timeout);
         switch(out_fds) {
             case 0:
                 break;
             case -1:
-                perror("select");
-                exit(1);
+                break;
             default:
                 if (FD_ISSET(fd_udp, &testfds)) {
                     if (verbose) printf("read udp\n");
@@ -1124,14 +1189,12 @@ int main(int argc, char **argv) {
         }
     }
 
-    for (int i = 0; i < no_requests; i++) {
-        free(users_requests[i]->uid);
-        free(users_requests[i]->rid);
-        free(users_requests[i]->vc);
-        free(users_requests[i]->fop);
-        if (users_requests[i]->tid != NULL) free(users_requests[i]->tid);
-        if (users_requests[i]->fname != NULL) free(users_requests[i]->fname);
-        free(users_requests[i]);
+    close(fd_udp);
+    close(fd_user);
+
+    for (int i = 0; i < MAX_REQUESTS; i++) {
+        if(users_requests[i] != NULL)
+            free_request(users_requests[i]);
     }
     free(users_requests);
 
@@ -1142,8 +1205,6 @@ int main(int argc, char **argv) {
     free(as_port);
     free(in_str);
     free(users);
-    close(fd_udp);
-    close(fd_user);
 
     return 0;
 }

@@ -90,7 +90,7 @@ int read_vlc(char* input, char* vlc_out, int* instruction, char* file_name) {
     // commands R, U and D need extra argument
     if (instruction_read != NULL && (instruction_read[0] == 'R' || instruction_read[0] == 'U' || instruction_read[0] == 'D')) {
         
-        file_name_read = split(input, &saved_index, '\n', FILE_NAME_SIZE + 1);
+        file_name_read = split(input, &index, '\n', FILE_NAME_SIZE + 1);
         if (file_name_read == NULL) {
             free(vlc);
             free(instruction_read);

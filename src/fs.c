@@ -457,6 +457,7 @@ char* upload(char* uid, char* fname, char* data, int data_size, unsigned long lo
         free(file_path);
         char* message = (char*) malloc(sizeof(char) * 9);
         if (sprintf(message, "RUP DUP\n") == -1) {
+            if (verbose) printf("file already exists\n");
             free(message);
             return NULL;
         }        
@@ -471,11 +472,13 @@ char* upload(char* uid, char* fname, char* data, int data_size, unsigned long lo
         return NULL;
     }
 
-    if (data_size > (int) size) data_size -= 1;
-    if (fwrite(data, 1, data_size, fp) == 0) {
-        if (verbose) printf("upload: can't write file for user %s\n", uid);
-        fclose(fp);
-        return NULL;
+    if (data_size != 0) {
+        if (data_size > (int) size) data_size -= 1;
+        if (fwrite(data, 1, data_size, fp) == 0) {
+            if (verbose) printf("upload: can't write file for user %s\n", uid);
+            fclose(fp);
+            return NULL;
+        }
     }
 
     // read rest of data from socket
@@ -770,7 +773,7 @@ char* parse_user_request(char* request_message, int message_size, int fd) {
     }
 
     // check if size is bigger than the limit
-    if (size <= 0 || size > FILE_SIZE || !data) {
+    if (size > FILE_SIZE) {
         if (verbose) printf("%s: invalid arguments for user %s\n", request_type, uid);
         free(uid);
         free(tid);
@@ -855,7 +858,6 @@ void handle_user(int newfd) {
     char* res = parse_user_request(buffer, n, newfd);
     free(buffer);
     if (res) {
-        printf("%s\n", res);
         n = write(newfd, res, strlen(res));
         if(n == -1) {
             // TODO handle error

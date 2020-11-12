@@ -7,7 +7,7 @@
 #include "../aux/constants.h"
 
 typedef struct credentials {
-    char* name;
+    char* id;
     char* password;
 } *credentials;
 
@@ -25,7 +25,7 @@ char* command_to_string(char command) {
 char* unregister(char* as_ip, char* as_port) {
     char* message = (char*) malloc(sizeof(char) * 20);
 
-    if (sprintf(message, "UNR %s %s\n", user->name, user->password) < 0) {
+    if (sprintf(message, "UNR %s %s\n", user->id, user->password) < 0) {
         fprintf(stderr, "sprintf error\n");
         exit(EXIT_FAILURE);
     }
@@ -37,7 +37,13 @@ char* unregister(char* as_ip, char* as_port) {
 
 }
 
-
+/** returns -2 in case of invalid as response
+ *  returns 1 in case of an operation that requires a filename
+ *  returns 0 in case of an operation that does not require a filename
+ *  returns -1 in case of an unexpected answer
+ * 
+ *  instruction will store the operation identifier
+*/
 int read_vlc(char* input, char* vlc_out, int* instruction, char* file_name) {
 
     int index = 0;
@@ -58,17 +64,17 @@ int read_vlc(char* input, char* vlc_out, int* instruction, char* file_name) {
     free(aux);
 
     // read user id
-    char* user_name = split(input, &index, ' ', (UID_SIZE + 1));
+    char* uid = split(input, &index, ' ', (UID_SIZE + 1));
 
-    if (user_name == NULL) {
+    if (uid == NULL) {
         return -2;
     }
 
-    if (strcmp(user_name, user->name) != 0) {
-        free(user_name);
+    if (strcmp(uid, user->id) != 0) {
+        free(uid);
         return -2;
     }
-    free(user_name);
+    free(uid);
 
     // read vlc
     char* vlc = split(input, &index, ' ', VLC_SIZE + 1);
@@ -196,7 +202,7 @@ char* read_reg_command(char* input, char* pd_ip, char* pd_port) {
     }
 
     free(aux);
-    strcpy(user->name, uid);
+    strcpy(user->id, uid);
     strcpy(user->password, password);
     free(uid);
     free(password);
@@ -246,7 +252,7 @@ int main(int argc, char **argv) {
         strcpy(pd_port, PD_PORT);
     }
     if (!as_port_flag) {
-        strcpy(pd_port, AS_PORT);
+        strcpy(as_port, AS_PORT);
     }
 
     int error = FALSE;
@@ -275,11 +281,19 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    user = (credentials) malloc(sizeof(struct credentials));
-    user->name = (char*) malloc(sizeof(char) * UID_SIZE + 1);
-    user->password = (char*) malloc(sizeof(char) * PASSWORD_SIZE + 1);
-
     int fd_as = open_udp(pd_port);
+    if (fd_as == -1) {
+        printf("Connection error.\n");
+        free(pd_ip);
+        free(pd_port);
+        free(as_ip);
+        free(as_port);
+        exit(EXIT_FAILURE);
+    }
+
+    user = (credentials) malloc(sizeof(struct credentials));
+    user->id = (char*) malloc(sizeof(char) * UID_SIZE + 1);
+    user->password = (char*) malloc(sizeof(char) * PASSWORD_SIZE + 1);
 
     char* in_str = (char*) malloc(sizeof(char) * BUFFER_SIZE);
     fd_set inputs, testfds;
@@ -288,8 +302,8 @@ int main(int argc, char **argv) {
     FD_ZERO(&inputs); 
     FD_SET(0,&inputs);
     FD_SET(fd_as, &inputs);
-
-    while(TRUE) {
+    int running = TRUE;
+    while(running) {
         testfds=inputs;
         timeout.tv_sec=10;
         timeout.tv_usec=0;
@@ -310,7 +324,7 @@ int main(int argc, char **argv) {
                         // check if user input is "exit"
                         char exit_txt[6] = "exit\n\0";
                         if (strcmp(in_str, exit_txt) == 0) {
-
+                            running = FALSE;
                             char expected_message[8] = "RUN OK\n\0";
                             char* answer = unregister(as_ip, as_port);
                             if (strcmp(expected_message, answer) == 0) {
@@ -320,26 +334,19 @@ int main(int argc, char **argv) {
                                 printf("unregistration failed\n");
                             }
                             free(answer);
-
-                            free(pd_ip);
-                            free(pd_port);
-                            free(as_ip);
-                            free(as_port);
-                            free(in_str);
-
-                            close(fd_as);
-
-                            free(user->name);
-                            free(user->password);
-                            free(user);
-                            exit(EXIT_SUCCESS);
+                            break;
                         }
                         
                         char* message = read_reg_command(in_str, pd_ip, pd_port);
                         if (message == NULL) break;
 
                         char* answer = send_udp(message, as_ip, as_port);
-
+                        if (answer == NULL) {
+                            free(message);
+                            free(answer);
+                            running = FALSE;
+                            break;
+                        }
                         char expected_message[8] = "RRG OK\n\0";
 
                         if (strcmp(expected_message, answer) == 0) {
@@ -348,7 +355,6 @@ int main(int argc, char **argv) {
                         else {
                             printf("%s", answer);
                         }
-                        // TODO handle invalid answer
 
                         free(message);
                         free(answer);
@@ -376,27 +382,43 @@ int main(int argc, char **argv) {
                         free(file_name);
                     }
 
-                    // not working for some reason
                     if (out == 0 || out == 1) {
                         char* message = (char*) malloc(sizeof(char) * (UID_SIZE + 9));
-                        if (sprintf(message, "RVC %s OK\n", user->name) < 0) {
+                        if (sprintf(message, "RVC %s OK\n", user->id) < 0) {
+                            free(message);
                             fprintf(stderr, "sprintf error\n");
                             exit(EXIT_FAILURE);
                         }
                         
                         sendto(fd_as, message, UID_SIZE + 9, 0, (struct sockaddr*)&addr, addrlen);
+                        free(message);
                     }
                     else if (out == -2) {
                         char* message = (char*) malloc(sizeof(char) * (UID_SIZE + 9));
-                        if (sprintf(message, "RVC %s NOK\n", user->name) < 0) {
+                        if (sprintf(message, "RVC %s NOK\n", user->id) < 0) {
+                            free(message);
                             fprintf(stderr, "sprintf error\n");
                             exit(EXIT_FAILURE);
                         }
                         sendto(fd_as, message, UID_SIZE + 9, 0, (struct sockaddr*)&addr, addrlen);
+                        free(message);
                     }
                 } 
                 break;
         }
     }
+
+    free(pd_ip);
+    free(pd_port);
+    free(as_ip);
+    free(as_port);
+    free(in_str);
+
+    close(fd_as);
+
+    free(user->id);
+    free(user->password);
+    free(user);
+
     return 0;
 }

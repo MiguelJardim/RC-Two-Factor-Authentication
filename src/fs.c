@@ -156,34 +156,6 @@ int validate_request(char* uid, char* tid, char* fop, char* fname) {
     return 0;
 }
 
-int validate_filename(char* fname) {
-    if (!fname) return -1;
-    if (strlen(fname) > FILE_NAME_SIZE) return -1;
-
-    int i = 0;
-    char c = fname[i++];
-    while (c != '.' && c != '\0') {
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_')) return -1;
-        c = fname[i++];
-    }
-
-    if (c != '.') return -1;
-
-    c = fname[i++];
-    if (!(c >= 'a' && c <= 'z')) return -1;
-
-    c = fname[i++];
-    if (!(c >= 'a' && c <= 'z')) return -1;
-
-    c = fname[i++];
-    if (!(c >= 'a' && c <= 'z')) return -1;
-
-    c = fname[i];
-    if (c != '\0') return -1;
-
-    return 0;
-}
-
 int number_of_files(char* dirname) {
     DIR *d;     
     struct dirent *dir;
@@ -361,7 +333,6 @@ char* retrieve(char* uid, char* fname, int fd) {
     }
 
     unsigned long long int size = get_file_size(file_path);
-    printf("file size:-%llu-\n", size);
     free(file_path);
     int message_size = 7 + F_SIZE + 2;
     char* message = (char*) malloc(sizeof(char) * message_size);
@@ -373,7 +344,7 @@ char* retrieve(char* uid, char* fname, int fd) {
  
     int n = write(fd, message, strlen(message));
     free(message);
-    if(n == -1) {
+    if(n <= 0 || !running) {
         return NULL;
     }
 
@@ -381,7 +352,7 @@ char* retrieve(char* uid, char* fname, int fd) {
     char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE); 
     while (sent < size) {
         n = fread(buffer, sizeof(char), BUFFER_SIZE, file);
-        if (n == -1) {
+        if (n <= 0 || !running) {
             if (verbose) printf("retrive: can't read data %s\n", uid);
             fclose(file);
             free(buffer);
@@ -389,7 +360,7 @@ char* retrieve(char* uid, char* fname, int fd) {
         }
 
         n = write(fd, buffer, n);
-        if (n == -1) {
+        if (n <= 0 || !running) {
             if (verbose) printf("retrive: can't send data %s\n", uid);
             fclose(file);
             free(buffer);
@@ -409,7 +380,7 @@ char* retrieve(char* uid, char* fname, int fd) {
     }
     n = write(fd, end, 2);
     free(end);
-    if(n == -1) {
+    if(n <= 0 || !running) {
         return NULL;
     }
 
@@ -487,7 +458,7 @@ char* upload(char* uid, char* fname, char* data, int data_size, unsigned long lo
     char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
     while (received < size) {
         n = read(fd, buffer, BUFFER_SIZE);
-        if(n == -1) {
+        if(n <= 0 || !running) {
             if (verbose) printf("upload: can't read data %s\n", uid);
             fclose(fp);
             close(fd);
@@ -671,7 +642,7 @@ char* parse_user_request(char* request_message, int message_size, int fd) {
         free(abreviated);
         free(tid);
         if (result == -1) {
-            if (verbose) printf("%s: AS refused operation for user %s\n", get_status(request_type), uid);
+            if (verbose) printf("%s: AS refused operation for user %s\n", request_type, uid);
             free(uid);
             char* message = (char*) malloc(sizeof(char) * 9);
             if (sprintf(message, "%s %s\n", get_status(request_type), INV) == -1) {
@@ -729,7 +700,7 @@ char* parse_user_request(char* request_message, int message_size, int fd) {
         result = validate_request(uid, tid, abreviated, fname);
         free(abreviated);
         if (result == -1) {
-            if (verbose) printf("%s: AS refused operation for user %s\n", get_status(request_type), uid);
+            if (verbose) printf("%s: AS refused operation for user %s\n", request_type, uid);
             free(uid);
             free(tid);
             free(fname);
@@ -794,7 +765,7 @@ char* parse_user_request(char* request_message, int message_size, int fd) {
     free(tid);
     free(abreviated);
     if (result == -1) {
-        if (verbose) printf("%s: AS refused operation for user %s\n", get_status(request_type), uid);
+        if (verbose) printf("%s: AS refused operation for user %s\n", request_type, uid);
         free(uid);
         free(tid);
         free(fname);
@@ -820,9 +791,13 @@ char* parse_user_request(char* request_message, int message_size, int fd) {
 
 void quit(int sig) { 
     if (sig == 2) running = FALSE;
-} 
+
+    if (sig == 13) running = FALSE;
+}
 
 void handle_user(int newfd) {
+    signal(SIGPIPE, quit);
+
     char* buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
 
     fd_set inputs, testfds;
@@ -843,7 +818,7 @@ void handle_user(int newfd) {
         default:
             if(FD_ISSET(newfd,&testfds)) {
                 n = read(newfd, buffer, BUFFER_SIZE - 1);
-                if(n == -1) {
+                if(n <= 0 || !running) {
                     close(newfd);
                     free(buffer);
                     printf("user disconected - %d\n", user_index % 100);
@@ -859,7 +834,7 @@ void handle_user(int newfd) {
     free(buffer);
     if (res) {
         n = write(newfd, res, strlen(res));
-        if(n == -1) {
+        if(n <= 0 || !running) {
             // TODO handle error
             free(res);
             close(newfd);

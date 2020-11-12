@@ -168,3 +168,29 @@ int validate_fop(char* fop) {
     
     return i;
 }
+
+int validate_filename(char* fname) {
+    if (!fname) return -1;
+    if (strlen(fname) > FILE_NAME_SIZE) return -1;
+
+    int i = 0;
+    char c = fname[i++];
+    while (i < (int) strlen(fname) && c != '\0') {
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_' || c == '.')) return -1;
+        c = fname[i++];
+    }
+
+    c = fname[i];
+    if (c != '\0') return -1;
+
+    return 0;
+}
+
+int is_number(char* number) {
+    if (number == NULL) return FALSE;
+
+    for (int i = 0; i < (int) strlen(number); i++) {
+        if (number[i] < '0' || number[i] > '9') return FALSE;
+    }
+    return TRUE;
+}

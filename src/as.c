@@ -556,6 +556,15 @@ char* request_VC(char* message, int i) {
             strcpy(rrq_status, err);
             return rrq_status;    
         }
+        if (validate_filename(fname) == -1) {
+            if (verbose) printf("Invalid filename\n");
+            free(u_ist_id);
+            free(rid);
+            free(fop);
+            free(fname);
+            strcpy(rrq_status, err);
+            return rrq_status;  
+        }
     }
     else {
         if (fname != NULL) {
@@ -1089,17 +1098,18 @@ int main(int argc, char **argv) {
                         user_been_treat = i;
                         n = read (users[i], in_str, BUFFER_SIZE - 1);
                         in_str[n] = 0;
-                        if(socket_closed || n == -1) {
+                        if(socket_closed || n <= 0) {
                             if (verbose) printf("user disconnected\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);
                             disconnect_user();
                             users[i] = -1;
+                            socket_closed = FALSE;
                             break;
                         } 
                         char* answer = treat_tcp_message(in_str);
                         if (answer != NULL) n = write (users[i], answer, strlen(answer));
-                        if (socket_closed || n == -1) {
+                        if (socket_closed || n <= 0) {
                             if (verbose) printf("user disconnected\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);

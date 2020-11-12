@@ -15,5 +15,7 @@ int validate_port(char* port);
 int validate_rid(char* rid);
 int validate_vc(char* vc);
 int validate_fop(char* fop);
+int validate_filename(char* fname);
+int is_number(char* number);
 
 #endif

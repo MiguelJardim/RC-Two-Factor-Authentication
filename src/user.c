@@ -315,6 +315,8 @@ char* list_command() {
         return NULL;
     }
 
+
+
     return message;
 }
 
@@ -340,6 +342,10 @@ char* retrieve_command(char* input, int index) {
 }
 
 char* upload(char* input, int index) {
+    char ok[9] = "RUP OK\n\0";
+    char dup[10] = "RUP DUP\n\0";
+    char full[11] = "RUP FULL\n\0";
+    char nok[10] = "RUP NOK\n\0";
 
     if (request->tid == NULL) {
         printf("upload failed\n");
@@ -428,22 +434,44 @@ char* upload(char* input, int index) {
         printf("upload failed\n");
         return NULL;
     }
-
     fclose(file);
+
+    n = read(fd_fs, message, BUFFER_SIZE);
+    if (n == -1) {
+        free(message);
+        printf("can't read message from fs\n");
+        return NULL; 
+    }
+    message[n] = 0;
+    if (strcmp(message, ok) == 0) {
+        printf("File upload well secceeded.\n");
+    }
+    if (strcmp(message, dup) == 0) {
+        printf("File already exists.\n");
+    }
+    if (strcmp(message, full) == 0) {
+        printf("Failed uploading file.\n
+                Server already reached full capacity.\n");
+    }
+    if (strcmp(message, nok) == 0) {
+        printf("Failed uploading file.\n");
+    }
+    close(fd_fs);
     return NULL;
 }
 
 char* delete_command(char* input, int index) {
     int input_index = index;
+    char ok[9] = "RDL OK\n\0";
 
-    char* filename = split(input, &input_index, ' ', 20);
+    char* filename = split(input, &input_index, ' ', FILE_NAME_SIZE + 1);
     if (filename == NULL) {
         printf("invalid filename\n");
         free(filename);
         return NULL;
     }
     // DEL UID TID Fname
-    char* message = (char*) malloc(sizeof(char) * 45);
+    char* message = (char*) malloc(sizeof(char) * BUFFER_SIZE);
     if (sprintf(message, "DEL %s %s %s\n", request->uid, request->tid, filename) < 0) {
         free(message);
         free(filename);
@@ -451,20 +479,85 @@ char* delete_command(char* input, int index) {
         return NULL;
     }
     free(filename);
-    return message;
+
+    fd_fs = connect_tcp(fs_ip, fs_port);
+
+    if (fd_fs == -1) {
+        printf("can't create socket\n");
+        free(fs_port);
+        exit(EXIT_FAILURE);
+    }
+
+    int n = write(fd_fs, message, strlen(message));
+    free(message);
+    if(n == -1) {
+        printf("delete failed\n");
+        return NULL;
+    }
+
+    n = read(fd_fs, message, BUFFER_SIZE);
+
+    if (n == -1) {
+        free(message);
+        printf("can't read message from fs\n");
+        return NULL; 
+    }
+    message[n] = 0;
+    if (strcmp(message, ok) == 0) {
+        printf("File deletion well succeeded\n");
+    }else{
+        printf("Failed deleting file\n");
+    }
+    close(fd_fs);
+    return NULL;
 }
 
 char* remove_command() {
-    
-    // REM UID TID
-    char* message = (char*) malloc(sizeof(char) * 45);
+    char ok[9] = "RRM OK\n\0";
 
-    if (sprintf(message, "DEL %s %s\n", request->uid, request->tid) < 0) {
+    // REM UID TID
+    char* message = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+
+    if (sprintf(message, "REM %s %s\n", request->uid, request->tid) < 0) {
         free(message);
         printf("Sprintf ERROR\n");
         return NULL;
     }
-    return message;
+    free(message);
+
+    fd_fs = connect_tcp(fs_ip, fs_port);
+
+    if (fd_fs == -1) {
+        printf("can't create socket\n");
+        free(fs_port);
+        exit(EXIT_FAILURE);
+    }
+
+    int n = write(fd_fs, message, strlen(message));
+
+    if(n == -1) {
+        printf("remove failed\n");
+        return NULL;
+    }
+    n = read(fd_fs, message, BUFFER_SIZE);
+
+    if (n == -1) {
+        free(message);
+        printf("can't read message from fs\n");
+        return NULL; 
+    }
+    message[n] = 0;
+    if (strcmp(message, ok) == 0) {
+        printf("All files removed.\n
+                All directories removed.\n
+                User's information deleted from server.\n");
+    }else{
+        printf("Failed removing files.\n
+                Failed removing directories.\n
+                Failed deleting user's information from server.\n");
+    }
+    close(fd_fs);
+    return NULL;
 }
 
 void disconnect_user() {
@@ -574,6 +667,7 @@ char* treat_command(char* input) {
             free(aux);
         else {
             char* answer = upload(input, input_index);
+            free(answer);
             return NULL;
         }
     }  
@@ -587,7 +681,8 @@ char* treat_command(char* input) {
         if ((strcmp(aux, delete) != 0) && (strcmp(aux, d) != 0))
             free(aux);
         else {
-            //TODO
+            char* answer = delete_command(input, input_index);
+            free(answer);
             return NULL;
         }
     }
@@ -602,7 +697,8 @@ char* treat_command(char* input) {
         if ((strcmp(aux, remove) != 0) && (strcmp(aux, x) != 0))
             free(aux);
         else {
-            //TODO 
+            char* answer = remove_command();
+            free(answer);
             return NULL;
         }
     }
@@ -768,3 +864,4 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+

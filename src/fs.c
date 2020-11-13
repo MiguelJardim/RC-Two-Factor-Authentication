@@ -547,7 +547,7 @@ char* remove_all(char* uid) {
 
     // get directory name and check if it exists
     char* dirname = user_dirname(uid);
-    if (!dirname) {
+    if (!dirname || access(dirname, F_OK) == -1) {
         if (verbose) printf("can't get directory name for user %s\n", uid);
         free(dirname);
         char* message = (char*) malloc(sizeof(char) * 8);

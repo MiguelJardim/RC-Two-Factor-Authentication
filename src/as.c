@@ -849,7 +849,7 @@ char* request_vc(char* message, int i) {
     free(rvc);
     free(uid);
     free(status);
-    if (verbose) printf("Requested sucessfully.\n");
+    if (verbose) printf("Sucessful request.\n");
     return rrq_status;
 }
 
@@ -1074,7 +1074,6 @@ char* unregist_uid(char* message, int i) {
 
     int v = UID_exists(u_ist_id);
     if (!v){
-        if (verbose) printf("UID not registered on server\n");
         free(u_ist_id);
         free(password);
         return run_status;

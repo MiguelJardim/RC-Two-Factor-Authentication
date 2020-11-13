@@ -9,6 +9,7 @@
 
 char* split(char* input, int* index, char separator, int size);
 int validate_uid(char* uid);
+int validate_tid(char* tid);
 int validate_password(char* password);
 int validate_ip(char* ip);
 int validate_port(char* port);

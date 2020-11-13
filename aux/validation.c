@@ -194,3 +194,79 @@ int is_number(char* number) {
     }
     return TRUE;
 }
+
+int select_timeout(fd_set* inputs, struct timeval* timeout) {
+    int out_fds=select(FD_SETSIZE,inputs,(fd_set *)NULL,(fd_set *)NULL,timeout);
+    return out_fds;
+}
+
+int write_all(int fd, char* message, int size) {
+    int sent = 0;
+    int n = 0;
+    while (sent < size) {
+        n = write(fd, message + sent, size - sent);
+        if (n <= 0) {
+            return sent;
+        }
+        sent += n;
+    }
+    return sent;
+}
+
+int read_all(int fd, char* message, int size) {
+
+    char* buffer = (char*) malloc(sizeof(char) * size);
+    int first = TRUE;
+    int total = 0;
+    int reading = TRUE;
+
+    fd_set inputs, testfds;
+    struct timeval timeout;
+    int out_fds, n;
+    FD_ZERO(&inputs); 
+    FD_SET(fd, &inputs);
+
+    while (reading) {
+        testfds = inputs;
+        timeout.tv_sec = 10;
+        timeout.tv_usec = 0;
+        out_fds = select_timeout(&testfds, &timeout);
+        switch(out_fds) {
+            case 0:
+                free(buffer);
+                return 0;
+            case -1:
+                break;
+            default:
+                if(FD_ISSET(fd,&testfds)) {
+                    n = read(fd, buffer, size - total - 1);
+                    if(n <= 0) {
+                        free(buffer);
+                        return 0;
+                    }
+                    buffer[n] = '\0';
+                    
+                    if (first) {
+                        strcpy(message, buffer);
+                        first = FALSE;
+                    }
+                    else {
+                        if (strcat(message, buffer) == NULL) {
+                            free(buffer);
+                            return 0;
+                        }
+                    }
+                    
+                    total += n;
+                    if (buffer[n - 1] == '\n' || total == size - 1) {
+                        free(buffer);
+                        reading = FALSE;
+                        break;
+                    }
+                    buffer[0] = 0;
+                }
+                break;
+        }
+    }
+    return total;
+}

@@ -18,5 +18,7 @@ int validate_vc(char* vc);
 int validate_fop(char* fop);
 int validate_filename(char* fname);
 int is_number(char* number);
-
+int select_timeout(fd_set* inputs, struct timeval* timeout);
+int write_all(int fd, char* message, int size);
+int read_all(int fd, char* message, int size);
 #endif

@@ -25,9 +25,9 @@
 #define MAX_FILES 15
 
 #define AS_IP "193.136.128.109\0"
-#define FS_IP "193.136.128.103\0"
+#define FS_IP "193.136.128.108\0"
 #define AS_PORT "58047\0"
 #define PD_PORT "57047\0"
-#define FS_PORT "59047\0"
+#define FS_PORT "58100\0"
 
 #endif

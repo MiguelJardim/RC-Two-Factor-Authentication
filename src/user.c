@@ -118,19 +118,20 @@ void login(char* input, int index) {
     }
     free(password);
 
-    int n = write (fd_as, message, strlen(message));
+    int n = write_all(fd_as, message, strlen(message));
     if (n == -1) {
         printf("Cant send message to as\n");
         free(message);
         return; 
     }
-    n = read(fd_as, message, BUFFER_SIZE);
+    n = read_all(fd_as, message, BUFFER_SIZE);
     if (n == -1) {
         free(message);
         printf("Cant read message from as\n");
         return; 
     }
     message[n] = 0;
+
     if (strcmp(message, ok) == 0) {
         if (request->uid == NULL) request->uid = (char*) malloc(sizeof(char) * (UID_SIZE + 1));
         strcpy(request->uid, uid);
@@ -226,7 +227,7 @@ void request_operation(char* input, int index) {
         }
     }
 
-    int n = write (fd_as, message, strlen(message));
+    int n = write_all(fd_as, message, strlen(message));
     if (n == -1) {
         printf("Cant send message to as\n");
         if (filename != NULL) free(filename);
@@ -234,7 +235,7 @@ void request_operation(char* input, int index) {
         free(fop);
         return; 
     }
-    n = read(fd_as, message, BUFFER_SIZE);
+    n = read_all(fd_as, message, BUFFER_SIZE);
     if (n == -1) {
         printf("Cant read message from as\n");
         if (filename != NULL) free(filename);
@@ -243,6 +244,7 @@ void request_operation(char* input, int index) {
         return; 
     }
     message[n] = 0;
+
     if (strcmp(message, ok) == 0) {
         if (request->rid == NULL) request->rid = (char*) malloc(sizeof(char) * (RID_SIZE + 1));
         sprintf(request->rid, "%d", rid);
@@ -297,13 +299,13 @@ void validate_operation(char* input, int index) {
     }
     free(vc);
 
-    int n = write (fd_as, message, strlen(message));
+    int n = write_all(fd_as, message, strlen(message));
     if (n == -1) {
         printf("Cant send message to as\n");
         free(message);
         return; 
     }
-    n = read(fd_as, message, BUFFER_SIZE);
+    n = read_all(fd_as, message, BUFFER_SIZE);
     if (n == -1) {
         free(message);
         printf("Cant read message from as\n");
@@ -329,8 +331,10 @@ void validate_operation(char* input, int index) {
 
 
 void list() {
-    char failed[9] = "RLS EOF\n\0";
+    char no_files[9] = "RLS EOF\n\0";
     char error[9] = "RLS ERR\n\0";
+    char inv[9] = "RLS INV\n\0";
+    char nok[9] = "RLS NOK\n\0";
 
     if (!logged_in || request->tid == NULL) return;
 
@@ -343,13 +347,13 @@ void list() {
     }
     fd_fs = connect_tcp(fs_ip, fs_port);
     if (fd_fs == -1) {
-        printf("can't create socket\n");
+        printf("Connection error.\n");
         free(fs_port);
         free(message);
         exit(EXIT_FAILURE);
     }
 
-    int n = write(fd_fs, message, strlen(message));
+    int n = write_all(fd_fs, message, strlen(message));
     if(n == -1) {
         close(fd_fs);
         free(message);
@@ -358,25 +362,38 @@ void list() {
     }
     message[0] = '\0';
 
-    n = read(fd_fs, message, BUFFER_SIZE);
+    n = read_all(fd_fs, message, BUFFER_SIZE);
     if (n == -1) {
         close(fd_fs);
         free(message);
         printf("can't read message from fs\n");
         return; 
     }
-    message[n] = '\0';
-    if (strcmp(message, failed) == 0) {
+    message[n] = 0;
+
+    if (strcmp(message, no_files) == 0) {
         close(fd_fs);
         free(message);
         printf("No files to list.\n");
         return;
 
     }
-    if(strcmp(message, error) == 0){
+    else if(strcmp(message, error) == 0){
         free(message);
         close(fd_fs);
         printf("Invalid request.\n");
+        return;
+    }
+    else if(strcmp(message, inv) == 0){
+        free(message);
+        close(fd_fs);
+        printf("AS refused the operation.\n");
+        return;
+    }
+    else if(strcmp(message, nok) == 0){
+        free(message);
+        close(fd_fs);
+        printf("UID does not exist.\n");
         return;
     }
 
@@ -465,6 +482,11 @@ void list() {
 }
 
 void retrieve(char* input, int index) {
+    char no_files[9] = "RRT EOF\n\0";
+    char error[9] = "RRT ERR\n\0";
+    char inv[9] = "RRT INV\n\0";
+    char nok[9] = "RRT NOK\n\0";
+
     int input_index = index;
 
     if (!logged_in || request->uid == NULL || request->tid == NULL) return;
@@ -494,14 +516,14 @@ void retrieve(char* input, int index) {
 
     fd_fs = connect_tcp(fs_ip, fs_port);
     if (fd_fs == -1) {
-        printf("can't create socket\n");
+        printf("Connection error.\n");
         free(fs_port);
         free(message);
         exit(EXIT_FAILURE);
     }
 
     // send request message
-    int n = write(fd_fs, message, strlen(message));
+    int n = write_all(fd_fs, message, strlen(message));
     if (n <= 0) {
         free(message);
         free(filename);
@@ -511,12 +533,39 @@ void retrieve(char* input, int index) {
     }
     message[0] = '\0';
 
-    n = read(fd_fs, message, BUFFER_SIZE);
+    n = read_all(fd_fs, message, BUFFER_SIZE);
     if (n <= 0) {
         free(message);
         free(filename);
         printf("Connection error.\n");
         close(fd_fs);
+        return;
+    }
+    message[n] = 0;
+
+    if (strcmp(message, no_files) == 0) {
+        close(fd_fs);
+        free(message);
+        printf("File not available.\n");
+        return;
+
+    }
+    else if(strcmp(message, error) == 0){
+        free(message);
+        close(fd_fs);
+        printf("Invalid request.\n");
+        return;
+    }
+    else if(strcmp(message, inv) == 0){
+        free(message);
+        close(fd_fs);
+        printf("AS refused the operation.\n");
+        return;
+    }
+    else if(strcmp(message, nok) == 0){
+        free(message);
+        close(fd_fs);
+        printf("UID does not exist.\n");
         return;
     }
 
@@ -625,6 +674,7 @@ void upload(char* input, int index) {
     char dup[10] = "RUP DUP\n\0";
     char full[11] = "RUP FULL\n\0";
     char nok[10] = "RUP NOK\n\0";
+    char inv[10] = "RUP INV\n\0";
 
     if (!logged_in || request->tid == NULL) {
         printf("Upload failed.\n");
@@ -662,14 +712,14 @@ void upload(char* input, int index) {
 
     fd_fs = connect_tcp(fs_ip, fs_port);
     if (fd_fs == -1) {
-        printf("can't create socket\n");
+        printf("Connection error.\n");
         free(fs_port);
         free(message);
         exit(EXIT_FAILURE);
     }
 
     // write the first part of the message
-    int n = write(fd_fs, message, strlen(message));
+    int n = write_all(fd_fs, message, strlen(message));
     if(n == -1) {
         printf("Upload failed.\n");
         free(message);
@@ -689,7 +739,7 @@ void upload(char* input, int index) {
             return;
         }
 
-        n = write(fd_fs, buffer, n);
+        n = write_all(fd_fs, buffer, n);
         if (n == -1) {
             printf("upload: can't send data\n");
             fclose(file);
@@ -711,7 +761,7 @@ void upload(char* input, int index) {
         printf("upload failed\n");
         return;
     }
-    n = write(fd_fs, end, 2);
+    n = write_all(fd_fs, end, 2);
     free(end);
     if(n == -1) {
         printf("upload failed\n");
@@ -721,23 +771,30 @@ void upload(char* input, int index) {
     fclose(file);
 
     message[0] = '\0';
-    n = read(fd_fs, message, BUFFER_SIZE);
+    n = read_all(fd_fs, message, BUFFER_SIZE);
     if (n == -1) {
         free(message);
         printf("can't read message from fs\n");
         return; 
     }
     message[n] = 0;
+
     if (strcmp(message, ok) == 0) {
         printf("Upload successful.\n");
     }
-    if (strcmp(message, dup) == 0) {
+    else if (strcmp(message, dup) == 0) {
         printf("File already exists.\n");
     }
-    if (strcmp(message, full) == 0) {
+    else if (strcmp(message, full) == 0) {
         printf("Can't upload more files. Limit reached.\n");
     }
-    if (strcmp(message, nok) == 0) {
+    else if (strcmp(message, nok) == 0) {
+        printf("Upload failed.\n");
+    }
+    else if (strcmp(message, inv) == 0) {
+        printf("AS refused operation.\n");
+    }
+    else {
         printf("Upload failed.\n");
     }
     close(fd_fs);
@@ -746,6 +803,11 @@ void upload(char* input, int index) {
 }
 
 void delete(char* input, int index) {
+
+    char no_file[9] = "DEL EOF\n\0";
+    char error[9] = "DEL ERR\n\0";
+    char inv[9] = "DEL INV\n\0";
+    char nok[9] = "DEL NOK\n\0";
 
     if (!logged_in || request->uid == NULL || request->tid == NULL || request->fname == NULL) return;
 
@@ -771,12 +833,12 @@ void delete(char* input, int index) {
     fd_fs = connect_tcp(fs_ip, fs_port);
 
     if (fd_fs == -1) {
-        printf("can't create socket\n");
+        printf("Connection error.\n");
         free(fs_port);
         exit(EXIT_FAILURE);
     }
 
-    int n = write(fd_fs, message, strlen(message));
+    int n = write_all(fd_fs, message, strlen(message));
     if(n == -1) {
         printf("Delete failed.\n");
         free(message);
@@ -785,24 +847,52 @@ void delete(char* input, int index) {
 
     message[0] = '\0';
 
-    n = read(fd_fs, message, BUFFER_SIZE);
+    n = read_all(fd_fs, message, BUFFER_SIZE);
     if (n == -1) {
         free(message);
         printf("can't read message from fs\n");
         return; 
     }
     message[n] = 0;
+
     if (strcmp(message, ok) == 0) {
         printf("Delete successful.\n");
-    }else{
-        printf("Delete failed.\n");
     }
+    if (strcmp(message, no_file) == 0) {
+        close(fd_fs);
+        free(message);
+        printf("File not available.\n");
+        return;
+
+    }
+    else if(strcmp(message, error) == 0){
+        free(message);
+        close(fd_fs);
+        printf("Invalid request.\n");
+        return;
+    }
+    else if(strcmp(message, inv) == 0){
+        free(message);
+        close(fd_fs);
+        printf("AS refused the operation.\n");
+        return;
+    }
+    else if(strcmp(message, nok) == 0){
+        free(message);
+        close(fd_fs);
+        printf("UID does not exist.\n");
+        return;
+    }
+
     free(message);
     close(fd_fs);
     return;
 }
 
 void remove_all() {
+    char error[9] = "DEL ERR\n\0";
+    char inv[9] = "DEL INV\n\0";
+    char nok[9] = "DEL NOK\n\0";
 
     if (!logged_in || request->uid == NULL || request->tid == NULL) return;
 
@@ -818,12 +908,12 @@ void remove_all() {
 
     fd_fs = connect_tcp(fs_ip, fs_port);
     if (fd_fs == -1) {
-        printf("can't create socket\n");
+        printf("Connection error.\n");
         free(fs_port);
         exit(EXIT_FAILURE);
     }
 
-    int n = write(fd_fs, message, strlen(message));
+    int n = write_all(fd_fs, message, strlen(message));
     if(n == -1) {
         printf("Remove failed.\n");
         return;
@@ -831,7 +921,7 @@ void remove_all() {
 
     message[0] = '\0';
 
-    n = read(fd_fs, message, BUFFER_SIZE);
+    n = read_all(fd_fs, message, BUFFER_SIZE);
     if (n == -1) {
         free(message);
         printf("can't read message from fs\n");
@@ -841,8 +931,27 @@ void remove_all() {
 
     if (strcmp(message, ok) == 0) {
         printf("Remove successful.\n");
-    }else{
-        printf("Remove failed.\n");
+    }
+    else if(strcmp(message, error) == 0){
+        free(message);
+        close(fd_fs);
+        printf("Invalid request.\n");
+        return;
+    }
+    else if(strcmp(message, inv) == 0){
+        free(message);
+        close(fd_fs);
+        printf("AS refused the operation.\n");
+        return;
+    }
+    else if(strcmp(message, nok) == 0){
+        free(message);
+        close(fd_fs);
+        printf("UID does not exist.\n");
+        return;
+    }
+    else {
+        printf("Remove failed for unknown reason.\n");
     }
     free(message);
     close(fd_fs);
@@ -1104,7 +1213,7 @@ int main(int argc, char **argv) {
 
     fd_as = connect_tcp(as_ip, as_port);
     if (fd_as == -1) {
-        printf("can't create socket\n");
+        printf("Connection error.\n");
         free(as_port);
         exit(EXIT_FAILURE);
     }
@@ -1127,7 +1236,7 @@ int main(int argc, char **argv) {
                 exit(EXIT_FAILURE);
             default:
                 if(FD_ISSET(0, &testfds)) {
-                    if (( n = read(0, in_str, BUFFER_SIZE))!= 0) {
+                    if (( n = read_all(0, in_str, BUFFER_SIZE))!= 0) {
                         if (n == -1) {
                             printf("cant read from stdin\n");
                             exit(1); 

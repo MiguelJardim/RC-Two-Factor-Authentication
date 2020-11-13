@@ -13,9 +13,9 @@
 #include <signal.h>
 #include <fcntl.h>
 
-#include "../aux/validation.h"
-#include "../aux/conection.h"
-#include "../aux/constants.h"
+#include "../../aux/validation.h"
+#include "../../aux/conection.h"
+#include "../../aux/constants.h"
 
 const char* LST = "LST\0";
 const char* RTV = "RTV\0";
@@ -40,27 +40,8 @@ int verbose = FALSE;
 
 int running = TRUE;
 
-int write_all(int fd, char* message, int size) {
-    int sent = 0;
-    int n = 0;
-    while (sent < size) {
-        n = write(fd, message + sent, size - sent);
-        if (n <= 0) {
-            return sent;
-        }
-        sent += n;
-    }
-    return sent;
-}
-
-
 int validate_request_type(char* type) {
     return (type && (strcmp(type, LST) == 0 || strcmp(type, RTV) == 0 || strcmp(type, UPL) == 0 || strcmp(type, DEL) == 0 || strcmp(type, REM) == 0)) ? 0 : -1;
-}
-
-int select_timeout(fd_set* inputs, struct timeval* timeout) {
-    int out_fds=select(FD_SETSIZE,inputs,(fd_set *)NULL,(fd_set *)NULL,timeout);
-    return out_fds;
 }
 
 int get_file_size(char* path) {
@@ -795,7 +776,6 @@ char* parse_user_request(char* request_message, int message_size, int fd) {
     if (result == -1) {
         if (verbose) printf("%s: AS refused operation for user %s\n", request_type, uid);
         free(uid);
-        free(tid);
         free(fname);
         free(data);
         char* message = (char*) malloc(sizeof(char) * 9);

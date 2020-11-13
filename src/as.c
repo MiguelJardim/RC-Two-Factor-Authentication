@@ -21,7 +21,7 @@
 
 int socket_closed = FALSE;
 int verbose = FALSE;
-int user_been_treat = -1;
+int current_user = -1;
 int users_login_info[MAX_USERS];
 int running = TRUE;
 
@@ -151,13 +151,25 @@ int equal_passwords(char* u_ist_id, char* password) {
     char pass_path_file[28];
     FILE* pass_file;
     char p[9];
-    sprintf(pass_path_file, "USERS/%s/%s_pass.txt", u_ist_id, u_ist_id);
+    if (sprintf(pass_path_file, "USERS/%s/%s_pass.txt", u_ist_id, u_ist_id) == -1) {
+        if (verbose) printf("sprintf error\n");
+        return FALSE;
+    }
+
+    if (access(pass_path_file, F_OK) == -1) {
+        return FALSE;
+    }
+    
     pass_file = fopen(pass_path_file, "r");
     if (pass_file == NULL) {      
         if (verbose) printf("Unable to open password file.\n");
         return FALSE;
     }
-    fscanf(pass_file, "%s", p);
+    if (fscanf(pass_file, "%s", p) == 0) {
+        if (verbose) printf("fscanf error\n");
+        fclose(pass_file);
+        return FALSE;
+    }
     fclose(pass_file);
     //pass diferente
     if (strcmp(password, p) != 0)
@@ -172,8 +184,10 @@ int UID_exists(char* u_ist_id) {
     DIR* d;
     char dirname[13];
     char reg_filename[28];
-    sprintf(dirname, "USERS/%s", u_ist_id);
-    sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id);
+    if (sprintf(dirname, "USERS/%s", u_ist_id) == -1 || sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id) == -1) {
+        if (verbose) printf("sprintf error\n");
+        return FALSE;
+    } 
     d = opendir(dirname);
     if (d) {
         if (access(reg_filename, F_OK) != -1) {
@@ -216,7 +230,7 @@ int tid_exists_for_uid(char* u_ist_id, char* tid) {
 }
 
 int get_request_index(char* n_id, char* u_ist_id, int option) {
-    //se option for 0, entao quer usar o rid, se for 1 quer usar o tid
+    //se option for 0, entao quer usar o rid, se for 1 quer usar o tid, se for 2 serve so para verificar se existe algum request para o uid
     for (int i = 0; i < MAX_REQUESTS; i++) {
         if (users_requests[i] != NULL) {
             if (strcmp(users_requests[i]->uid, u_ist_id) == 0) {
@@ -246,14 +260,21 @@ int user_logged_with_uid(char* u_ist_id) {
     FILE* uid_login_file;
     char login_filename[28];
     char user_number[3];
-    sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id);
+    if (sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id) == -1) {
+        if (verbose) printf("sprintf error\n");
+        return -1;
+    }
     if (access(login_filename, F_OK) != -1) {
         uid_login_file = fopen(login_filename, "r");
         if (uid_login_file == NULL) {      
             if (verbose) printf("Unable to open login file.\n");
             return -1;
         }
-        fscanf(uid_login_file, "%s", user_number);
+        if (fscanf(uid_login_file, "%s", user_number) == 0) {
+            if (verbose) printf("fscanf error\n");
+            fclose(uid_login_file);
+            return -1;
+        }
         fclose(uid_login_file);
     }
     //caso o ficheiro de log in nao exista por nenhum user ter efetuado login com este uid
@@ -263,102 +284,101 @@ int user_logged_with_uid(char* u_ist_id) {
     return atoi(user_number);
 }
 
-void logout_user(char* u_ist_id) {
-    FILE* uid_login_file;
-    char login_filename[28];
-    char user_number[3];
-    sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id);
-    if (access(login_filename, F_OK) != -1) {
-        //se o ficheiro existe
-        uid_login_file = fopen(login_filename, "r");
-        if (uid_login_file == NULL) {      
-            if (verbose) printf("Unable to open login file\n");
-            return;
-        }
-        fscanf(uid_login_file, "%s", user_number);
-        fclose(uid_login_file);
-        if (remove(login_filename) != 0) {
-            if (verbose) printf("Unable to delete login file and logout user\n");
-            return;
-        }   
+int logout_user(char* u_ist_id) {
+    char dirname[UID_SIZE + 6 + 1];
+
+    remove_request(u_ist_id);
+
+    if (sprintf(dirname, "USERS/%s", u_ist_id) == -1) {
+        if (verbose) printf("sprintf error\n");
+        return -1;  
     }
-    else
-        return;
-    
-    users_login_info[atoi(user_number)] = -1;
-    return;
+
+    DIR *d;     
+    struct dirent *dir; 
+    d = opendir(dirname);     
+    if(!d) {
+        if (verbose) {
+            printf("can't open directory\n");
+        }
+        return -1;
+    }
+    char ignore_1[2] = ".\0";
+    char ignore_2[3] = "..\0";
+    while((dir = readdir(d)) != NULL) {      
+        if (strcmp(dir->d_name, ignore_1) != 0 && strcmp(dir->d_name, ignore_2) != 0) {
+            char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE  + 1 + strlen(dir->d_name) + 1));
+            sprintf(file_path, "USERS/%s/%s", u_ist_id, dir->d_name);
+            int ret = remove(file_path);
+            free(file_path);
+
+            if(ret != 0) return -1;
+        }     
+    }
+
+    closedir(d);
+
+    if (rmdir(dirname) != 0) {
+        return -1;
+    }
+
+    users_login_info[current_user] = -1;
+    return 0;
 }
 
 void disconnect_user() {
-    if (users_login_info[user_been_treat] == -1)    return;
+    if (users_login_info[current_user] == -1)    return;
 
     char* uid = (char*) malloc(sizeof(char) * (UID_SIZE + 1));
-    sprintf(uid, "%d", users_login_info[user_been_treat]);
+    if (sprintf(uid, "%d", users_login_info[current_user]) == -1) {
+        if (verbose) printf("sprintf error\n");
+        free(uid);
+        return;    
+    }
 
     remove_request(uid);
     free(uid);
     char login_filename[28];
-    sprintf(login_filename, "USERS/%d/%d_login.txt", users_login_info[user_been_treat], users_login_info[user_been_treat]);
+    if (sprintf(login_filename, "USERS/%d/%d_login.txt", users_login_info[current_user], users_login_info[current_user]) == -1) {
+        if (verbose) printf("sprintf error\n");
+        return;
+    }
     if (access(login_filename, F_OK) != -1) {
         if (remove(login_filename) != 0) {
-            if (verbose) printf("Unable to delete login file and logout user\n");
             return;
         }   
     }
     else {
-        users_login_info[user_been_treat] = -1;
+        users_login_info[current_user] = -1;
         return;
     }
 
-    users_login_info[user_been_treat] = -1;
+    users_login_info[current_user] = -1;
     return;
 }
 
-void delete_uid_files(char* u_ist_id) {
-    char reg_filename[28], pass_filename[28];
-    sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id);
-    sprintf(pass_filename, "USERS/%s/%s_pass.txt", u_ist_id, u_ist_id);
+int delete_connection_files(char* u_ist_id) {
+    char reg_filename[28];
+
+    if (sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id) == -1) {
+        if (verbose) printf("sprintf error\n");
+        return -1;  
+    }
+    
     if (access(reg_filename, F_OK) != -1) {
         if (remove(reg_filename) != 0) {
             if (verbose) printf("Unable to delete reg file and unregist UID\n");
-            return;
+            return -1;
         }      
     }
     else {
         if (verbose) printf("inexistent file\n");
-        return;
+        return -1;
     }
-        
-    
-    if (access(pass_filename, F_OK) != -1) {
-        if (remove(pass_filename) != 0) {
-            if (verbose) printf("Unable to delete pass file and unregist UID\n");
-            return;
-        }      
-    }
-    else {
-        if (verbose) printf("inexistent file\n");
-        return;
-    }
-    
-    DIR* dir;
-    char dirname[13];
-    sprintf(dirname, "USERS/%s", u_ist_id);
-
-    dir = opendir(dirname);
-    if (dir) {
-        closedir(dir);
-        rmdir(dirname);
-        return;
-    }
-    else {
-        if (verbose) printf("inexistent dir\n");
-        return;
-    }
-
+    return 0;
 }
 
-char* regist_UID(char* message, int i) {  
+char* regist_uid(char* message, int i) {  
     int input_index = i;
     char ok[9] = "RRG OK\n\0";
     char nok[9] = "RRG NOK\n\0";
@@ -403,18 +423,32 @@ char* regist_UID(char* message, int i) {
     char v = UID_exists(u_ist_id);
     if (v) {
         if (equal_passwords(u_ist_id, password)) {
-            strcpy(reg_status, ok);
             FILE* uid_reg_file;
             char reg_filename[28];
-            sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id);
+            if (sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id) == -1) {
+                if (verbose) printf("sprintf error\n");
+                free(u_ist_id);
+                free(password);
+                free(pd_ip);
+                free(pd_port);
+                return reg_status;    
+            }
             uid_reg_file = fopen(reg_filename, "w");
-            fprintf(uid_reg_file, "%s %s\n", pd_ip, pd_port);
+            if (fprintf(uid_reg_file, "%s %s\n", pd_ip, pd_port) < 0) {
+                if (verbose) printf("fprintf error\n");
+                free(u_ist_id);
+                free(password);
+                free(pd_ip);
+                free(pd_port);
+                fclose(uid_reg_file);
+                return reg_status;  
+            }
             fclose(uid_reg_file);
-            if (verbose) printf("UID registed successfully\n");
+            strcpy(reg_status, ok);
+            if (verbose) printf("UID registed successfully.\n");
         }
         else {
             if (verbose) printf("Trying to regist with existing UID and different passwords\n");
-            strcpy(reg_status, nok);
         }
 
         free(u_ist_id);
@@ -427,10 +461,24 @@ char* regist_UID(char* message, int i) {
         struct stat st = {0};
 
         char dir[13];
-        sprintf(dir, "USERS/%s", u_ist_id);
+        if (sprintf(dir, "USERS/%s", u_ist_id) == -1) {
+            if (verbose) printf("sprintf error\n");
+            free(u_ist_id);
+            free(password);
+            free(pd_ip);
+            free(pd_port);
+            return reg_status;
+        }
 
         if (stat(dir, &st) == -1) {
-            mkdir(dir, 0700);
+            if (mkdir(dir, 0700) == -1) {
+                if (verbose) printf("Unable to create dir\n");
+                free(u_ist_id);
+                free(password);
+                free(pd_ip);
+                free(pd_port);
+                return reg_status;
+            }
         }
 
         FILE* uid_pass_file;
@@ -439,8 +487,15 @@ char* regist_UID(char* message, int i) {
         char pass_filename[28];
         char reg_filename[28];
 
-        sprintf(pass_filename, "USERS/%s/%s_pass.txt", u_ist_id, u_ist_id);
-        sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id);
+        if (sprintf(pass_filename, "USERS/%s/%s_pass.txt", u_ist_id, u_ist_id) == -1 || sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id) == -1) {
+            if (verbose) printf("sprintf error\n");
+            free(u_ist_id);
+            free(password);
+            free(pd_ip);
+            free(pd_port);
+            return reg_status;   
+        }
+        
 
         uid_pass_file = fopen(pass_filename, "w");
         uid_reg_file = fopen(reg_filename, "w");
@@ -451,12 +506,19 @@ char* regist_UID(char* message, int i) {
             free(password);
             free(pd_ip);
             free(pd_port);
-            strcpy(reg_status, nok);
             return reg_status;
         }
 
-        fprintf(uid_pass_file, "%s\n", password);
-        fprintf(uid_reg_file, "%s %s\n", pd_ip, pd_port);
+        if (fprintf(uid_pass_file, "%s\n", password) < 0 || fprintf(uid_reg_file, "%s %s\n", pd_ip, pd_port) < 0) {
+            if (verbose) printf("fprintf error\n");
+            free(u_ist_id);
+            free(password);
+            free(pd_ip);
+            free(pd_port);
+            fclose(uid_pass_file);
+            fclose(uid_reg_file);
+            return reg_status;     
+        }
 
         fclose(uid_pass_file);
         fclose(uid_reg_file);
@@ -467,12 +529,12 @@ char* regist_UID(char* message, int i) {
         free(pd_ip);
         free(pd_port);
         strcpy(reg_status, ok);
-        if (verbose) printf("UID registed successfully\n");
+        if (verbose) printf("UID registed successfully.\n");
         return reg_status;
     }
 }
 
-char* login_UID(char* message, int i) {
+char* login_uid(char* message, int i) {
     int input_index = i;
     char ok[9] = "RLO OK\n\0"; // pass e id corretos
     char nok[9] = "RLO NOK\n\0";    //pass incorreta, id existente
@@ -504,15 +566,25 @@ char* login_UID(char* message, int i) {
     }
     else {
         if (equal_passwords(u_ist_id, password)) {
-            strcpy(log_status, ok);
             FILE* uid_login_file;
             char login_filename[28];
-            sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id);
+            if (sprintf(login_filename, "USERS/%s/%s_login.txt", u_ist_id, u_ist_id) == -1) {
+                if (verbose) printf("sprintf error\n");
+                free(u_ist_id);
+                free(password);
+                return log_status;  
+            }
             uid_login_file = fopen(login_filename, "w");
-            fprintf(uid_login_file, "%d\n", user_been_treat);
+            if (fprintf(uid_login_file, "%d\n", current_user) < 0) {
+                if (verbose) printf("fprintf error\n");
+                free(u_ist_id);
+                free(password);
+                return log_status;   
+            }
             fclose(uid_login_file);
-            users_login_info[user_been_treat] = atoi(u_ist_id); // significa que este user efetuou um login com um UID
-            if (verbose) printf("User is now logged in with uid: %s\n", u_ist_id);
+            users_login_info[current_user] = atoi(u_ist_id); // significa que este user efetuou um login com um UID
+            if (verbose) printf("New user logged with uid: %s.\n", u_ist_id);
+            strcpy(log_status, ok);
         }
         else {
             if (verbose) printf("Incorrect password\n");
@@ -525,7 +597,7 @@ char* login_UID(char* message, int i) {
 
 }
 
-char* request_VC(char* message, int i) {
+char* request_vc(char* message, int i) {
     int input_index = i;
     char ok[9] = "RRQ OK\n\0"; // deu ok
     char nok[5] = "NOK\n\0";  //deu nok
@@ -544,7 +616,7 @@ char* request_VC(char* message, int i) {
         return rrq_status;
     }
     //verifica se o user efetuou login com algum UID
-    if (users_login_info[user_been_treat] == -1) {
+    if (users_login_info[current_user] == -1) {
         if (verbose) printf("User is not logged in\n");
         free(u_ist_id);
         strcpy(rrq_status, elog);
@@ -564,7 +636,7 @@ char* request_VC(char* message, int i) {
     //verifica se o user efetuou Req com o uid que efetuou login
     v = user_logged_with_uid(u_ist_id);
     //user nao efetuou REQ para o seu UID com que efetuou login
-    if (v != user_been_treat) {
+    if (v != current_user) {
         if (verbose && v != -1) printf("User is not logged in with this UID\n");
         else if (verbose && v == -1) printf("ERROR openning uid login file");
         free(u_ist_id);
@@ -631,13 +703,42 @@ char* request_VC(char* message, int i) {
     //criacao da mensagem VLC do as para o pd
     char* vlc_message_to_pd = (char*) malloc(sizeof(char) * 45);
     int vc = four_digit_number_generator();
-    if (f == 2)
-        sprintf(vlc_message_to_pd, "VLC %s %d %s %s\n", u_ist_id, vc, fop, fname);    
-    else
-        sprintf(vlc_message_to_pd, "VLC %s %d %s\n", u_ist_id, vc, fop);
-    
+    if (f == 2) {
+        if (sprintf(vlc_message_to_pd, "VLC %s %d %s %s\n", u_ist_id, vc, fop, fname) == -1) {
+            if (verbose) printf("sprintf error\n");
+            free(u_ist_id);
+            free(rid);
+            free(fop);
+            free(fname);
+            free(vlc_message_to_pd);
+            strcpy(rrq_status, err);
+            return rrq_status;   
+        }
+    } 
+    else {
+        if (sprintf(vlc_message_to_pd, "VLC %s %d %s\n", u_ist_id, vc, fop) == -1) {
+            if (verbose) printf("sprintf error\n");
+            free(u_ist_id);
+            free(rid);
+            free(fop);
+            free(fname);
+            free(vlc_message_to_pd);
+            strcpy(rrq_status, err);
+            return rrq_status;       
+        }
+    }
     char* vc_str = (char*) malloc(sizeof(char) * 5);
-    sprintf(vc_str, "%d", vc);
+    if (sprintf(vc_str, "%d", vc) == -1) {
+        if (verbose) printf("sprintf error\n");
+        free(u_ist_id);
+        free(rid);
+        free(fop);
+        free(fname);
+        free(vc_str);
+        free(vlc_message_to_pd);
+        strcpy(rrq_status, err);
+        return rrq_status; 
+    }
 
     v = get_request_index(NULL, u_ist_id, 2);
     //uid ainda nao tem nenhum request
@@ -655,14 +756,14 @@ char* request_VC(char* message, int i) {
             free(fop);
             free(fname);
             free(vc_str);
-            free(rid);
+            free(vlc_message_to_pd);
             strcpy(rrq_status, err);
             return rrq_status;
         }
     }
     //uid ja tem um request
     else {
-        if (verbose) printf("This UID has already a request, it will be overwritten by this new request\n");
+        if (verbose) printf("This UID has already a request, it will be overwritten by this new request.\n");
         if (f == 2) {
             update_request(users_requests[v], rid, vc_str, fop, fname);
         }
@@ -680,14 +781,34 @@ char* request_VC(char* message, int i) {
     FILE* uid_reg_file;
 
     char reg_filename[28];
-    sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id);
+    if (sprintf(reg_filename, "USERS/%s/%s_reg.txt", u_ist_id, u_ist_id) == -1) {
+        if (verbose) printf("sprintf error\n");
+        free(u_ist_id);
+        free(vlc_message_to_pd);
+        strcpy(rrq_status, err);
+        return rrq_status;
+    }
     uid_reg_file = fopen(reg_filename, "r");
     char pd_ip[16];
     char pd_port[6];
-    fscanf(uid_reg_file, "%s %s", pd_ip, pd_port);
+    if (fscanf(uid_reg_file, "%s %s", pd_ip, pd_port) == 0) {
+        if (verbose) printf("fscanf error\n");
+        free(u_ist_id);
+        free(vlc_message_to_pd);
+        fclose(uid_reg_file);
+        strcpy(rrq_status, err);
+        return rrq_status;   
+    }
     fclose(uid_reg_file);
 
     char* rvc_status = send_udp(vlc_message_to_pd, pd_ip, pd_port);
+    if (rvc_status == NULL) {
+        free(u_ist_id);
+        free(vlc_message_to_pd);
+        free(rvc_status);
+        strcpy(rrq_status, err);
+        return rrq_status;   
+    }
     free(vlc_message_to_pd);
     //verificacao do rvc status
     int index = 0;
@@ -728,11 +849,11 @@ char* request_VC(char* message, int i) {
     free(rvc);
     free(uid);
     free(status);
-    if (verbose) printf("Requested sucessfully\n");
+    if (verbose) printf("Requested sucessfully.\n");
     return rrq_status;
 }
 
-char* check_VC(char* message, int i) {
+char* check_vc(char* message, int i) {
     int input_index = i;
     char failed[7] = "RAU 0\n\0";
     char* rau_status = (char*) malloc(sizeof(char)*10);
@@ -746,7 +867,7 @@ char* check_VC(char* message, int i) {
     }
 
     //verifica se o user efetuou login com algum UID
-    if (users_login_info[user_been_treat] == -1) {
+    if (users_login_info[current_user] == -1) {
         if (verbose) printf("User is not logged in\n");
         free(u_ist_id);
         return rau_status;
@@ -764,7 +885,7 @@ char* check_VC(char* message, int i) {
     //verifica se o user efetuou AUT com o uid que efetuou login
     int u = user_logged_with_uid(u_ist_id);
     //user nao efetuou AUT para o seu UID com que efetuou login
-    if (u != user_been_treat) {
+    if (u != current_user) {
         if (verbose && v != -1) printf("User is not logged in with this UID\n");
         else if (verbose && v == -1) printf("ERROR openning uid login file");
         free(u_ist_id);
@@ -800,23 +921,50 @@ char* check_VC(char* message, int i) {
         //verifica se o tid ja foi criado
         if (users_requests[request_index]->tid == NULL) {
             char* tid = (char*) malloc(sizeof(char) * (TID_SIZE + 1));
-            sprintf(tid, "%d", four_digit_number_generator());
+            if (sprintf(tid, "%d", four_digit_number_generator()) == -1) {
+                if (verbose) printf("sprintf error\n");
+                free(u_ist_id);
+                free(rid);
+                free(vc);
+                free(tid);
+                return rau_status; 
+            }
             //se existir um tid repetido neste u_ist_id gera outro tid
             while(tid_exists_for_uid(u_ist_id, tid) != -1)
-                sprintf(tid, "%d", four_digit_number_generator()); 
-            sprintf(rau_status, "RAU %s\n", tid);
+                if (sprintf(tid, "%d", four_digit_number_generator()) == -1) {
+                    if (verbose) printf("sprintf error\n");
+                    free(u_ist_id);
+                    free(rid);
+                    free(vc);
+                    free(tid);
+                    return rau_status; 
+                }
+            if (sprintf(rau_status, "RAU %s\n", tid) == -1) {
+                if (verbose) printf("sprintf error\n");
+                free(u_ist_id);
+                free(rid);
+                free(vc);
+                free(tid);
+                return rau_status; 
+            }
             users_requests[request_index]->tid = (char*) malloc(sizeof(char) * (TID_SIZE + 1));
             strcpy(users_requests[request_index]->tid, tid);
             free(tid);
         }
         //caso ja tenha um tid mantem se o mesmo nao se altera
         else {
-            sprintf(rau_status, "RAU %s\n", users_requests[request_index]->tid);   
+            if (sprintf(rau_status, "RAU %s\n", users_requests[request_index]->tid) == -1) {
+                if (verbose) printf("sprintf error\n");
+                free(u_ist_id);
+                free(rid);
+                free(vc);
+                return rau_status; 
+            }
         }
         
     }
     if (verbose && strcmp(rau_status, failed) == 0) printf("Incorrect validation code\n");
-    if (verbose && strcmp(rau_status, failed) != 0) printf("Tid generated successfully\n");
+    if (verbose && strcmp(rau_status, failed) != 0) printf("Tid generated successfully.\n");
     free(u_ist_id);
     free(rid);
     free(vc);
@@ -858,17 +1006,43 @@ char* vld_operation(char* message, int i) {
     v = tid_exists_for_uid(u_ist_id, tid);
     if (v == -1) {
         if (verbose) printf("Incorrect TID\n");
-        sprintf(cnf_answer, "CNF %s %s E\n", u_ist_id, tid);
+        if (sprintf(cnf_answer, "CNF %s %s E\n", u_ist_id, tid) == -1) {
+            if (verbose) printf("sprintf error\n");
+            strcpy(cnf_answer, err);
+            free(u_ist_id);
+            free(tid);
+            return cnf_answer;  
+        }
     }
-    else {
-        if (verbose) printf("Correct TID, successful validation\n");
-        if (strcmp(users_requests[v]->fop, "X") == 0)
-            logout_user(u_ist_id);
+    else {  
         int f = validate_fop(users_requests[v]->fop);
-        if (f == 2)
-            sprintf(cnf_answer, "CNF %s %s %s %s\n", u_ist_id, tid, users_requests[v]->fop, users_requests[v]->fname);
-        else if (f == 1)
-            sprintf(cnf_answer, "CNF %s %s %s\n", u_ist_id, tid, users_requests[v]->fop);
+        if (f == 2) {
+            if (sprintf(cnf_answer, "CNF %s %s %s %s\n", u_ist_id, tid, users_requests[v]->fop, users_requests[v]->fname) == -1) {
+                if (verbose) printf("sprintf error\n");
+                strcpy(cnf_answer, err);
+                free(u_ist_id);
+                free(tid);
+                return cnf_answer;  
+            }
+        }
+        else if (f == 1) {
+            if (sprintf(cnf_answer, "CNF %s %s %s\n", u_ist_id, tid, users_requests[v]->fop) == -1) {
+                if (verbose) printf("sprintf error\n");
+                strcpy(cnf_answer, err);
+                free(u_ist_id);
+                free(tid);
+                return cnf_answer;  
+            }
+            if (strcmp(users_requests[v]->fop, "X") == 0) {
+                if (logout_user(u_ist_id) == -1) {
+                    strcpy(cnf_answer, err);
+                    free(u_ist_id);
+                    free(tid);
+                    return cnf_answer;     
+                }
+            }
+            if (verbose) printf("Correct TID, successful validation.\n");
+        }
     }
    
     free(u_ist_id);
@@ -876,7 +1050,7 @@ char* vld_operation(char* message, int i) {
     return cnf_answer;
 }
 
-char* unregist_UID(char* message, int i) {
+char* unregist_uid(char* message, int i) {
     int input_index = i;
     char ok[8] = "RUN OK\n\0"; // deu ok
     char nok[9] = "RUN NOK\n\0";  //deu nok
@@ -907,13 +1081,13 @@ char* unregist_UID(char* message, int i) {
     }
     else {
         if (equal_passwords(u_ist_id, password)) {
+            if (delete_connection_files(u_ist_id) == -1) {
+                free(u_ist_id);
+                free(password);
+                return run_status;
+            }
             strcpy(run_status, ok);
-            logout_user(u_ist_id);
-            delete_uid_files(u_ist_id);
-            if (verbose) printf("UID deleted from AS server successfuly\n");
         }
-        else 
-            if (verbose) printf("Incorrect password\n");
     }
 
     free(u_ist_id);
@@ -930,7 +1104,6 @@ char* treat_udp_message(char* message) {
 
     char* action = split_message(message, &input_index, ' ', 4);
     if (action == NULL) {
-        printf("action: %s\n", action);
         if (verbose) printf("Invalid action\n");
         free(action);
         char* answer = (char*) malloc(sizeof(char) * 5);
@@ -940,7 +1113,7 @@ char* treat_udp_message(char* message) {
 
     char reg[4] = "REG\0";
     if (strcmp(action, reg) == 0) {
-        char* answer = regist_UID(message, input_index);
+        char* answer = regist_uid(message, input_index);
         free(action);
         return answer;
         //trata de verificar o REG
@@ -948,7 +1121,7 @@ char* treat_udp_message(char* message) {
 
     char unr[4] = "UNR\0";
     if (strcmp(action, unr) == 0) {
-        char* answer = unregist_UID(message, input_index);
+        char* answer = unregist_uid(message, input_index);
         free(action);
         return answer;
         //trata a operacao unr
@@ -986,7 +1159,7 @@ char* treat_tcp_message(char* message) {
 
     char log[4] = "LOG\0";
     if (strcmp(action, log) == 0) {
-        char* answer = login_UID(message, input_index);
+        char* answer = login_uid(message, input_index);
         free(action);
         return answer;
         //trata de fazer o Login
@@ -994,7 +1167,7 @@ char* treat_tcp_message(char* message) {
 
     char req[4] = "REQ\0";
     if (strcmp(action, req) == 0) {
-        char* answer = request_VC(message, input_index);
+        char* answer = request_vc(message, input_index);
         free(action);
         return answer;
         //trata a operacao req
@@ -1002,7 +1175,7 @@ char* treat_tcp_message(char* message) {
 
     char aut[4] = "AUT\0";
     if (strcmp(action, aut) == 0) {
-        char* answer = check_VC(message, input_index);
+        char* answer = check_vc(message, input_index);
         free(action);
         return answer;
         //trata a operacao aut
@@ -1021,6 +1194,82 @@ void handle_sock_closed(int sig) {
 
 void close_server(int sig) {
     if (sig == 2) running = FALSE;
+}
+
+int select_timeout(fd_set* inputs, struct timeval* timeout) {
+    int out_fds=select(FD_SETSIZE,inputs,(fd_set *)NULL,(fd_set *)NULL,timeout);
+    return out_fds;
+}
+
+int read_all(int fd, char* message, int size) {
+
+    char* buffer = (char*) malloc(sizeof(char) * size);
+    int first = TRUE;
+    int total = 0;
+    int reading = TRUE;
+
+    fd_set inputs, testfds;
+    struct timeval timeout;
+    int out_fds, n;
+    FD_ZERO(&inputs); 
+    FD_SET(fd, &inputs);
+
+    while (reading) {
+        testfds = inputs;
+        timeout.tv_sec = 10;
+        timeout.tv_usec = 0;
+        out_fds = select_timeout(&testfds, &timeout);
+        switch(out_fds) {
+            case 0:
+                free(buffer);
+                return 0;
+            case -1:
+                break;
+            default:
+                if(FD_ISSET(fd,&testfds)) {
+                    n = read(fd, buffer, size - total - 1);
+                    if(n <= 0 || socket_closed) {
+                        free(buffer);
+                        return 0;
+                    }
+                    buffer[n] = '\0';
+                    
+                    if (first) {
+                        strcpy(message, buffer);
+                        first = FALSE;
+                    }
+                    else {
+                        if (strcat(message, buffer) == NULL) {
+                            free(buffer);
+                            return 0;
+                        }
+                    }
+                    
+                    total += n;
+                    if (buffer[n - 1] == '\n' || total == size - 1) {
+                        free(buffer);
+                        reading = FALSE;
+                        break;
+                    }
+                    buffer[0] = 0;
+                }
+                break;
+        }
+    }
+    return total - 1;
+}
+
+int write_all(int fd, char* message, int size) {
+    int sent = 0;
+    int n = 0;
+    while (sent < size) {
+        n = write(fd, message + sent, size - sent);
+        if (n <= 0) {
+            return sent;
+        }
+        sent += n;
+    }
+    return sent;
 }
 
 int main(int argc, char **argv) {
@@ -1075,7 +1324,12 @@ int main(int argc, char **argv) {
     //new directory USERS
     struct stat st = {0};
     if (stat("USERS", &st) == -1) {
-        mkdir("USERS", 0700);
+        if (mkdir("USERS", 0700) == -1) {
+            if (verbose) printf("mkdir error\n");
+            free(as_port);
+            free(users_requests);
+            exit(EXIT_FAILURE);
+        }
     }
 
     int* users = (int*) malloc(sizeof(int) * MAX_USERS);
@@ -1089,6 +1343,7 @@ int main(int argc, char **argv) {
         free(as_port);
         free(users_requests);
         close(fd_udp);
+        free(users);
         exit(EXIT_FAILURE);
     }
 
@@ -1098,6 +1353,7 @@ int main(int argc, char **argv) {
         free(as_port);
         free(users_requests);
         close(fd_user);
+        free(users);
         exit(EXIT_FAILURE);
     }
     fd_set inputs, testfds;
@@ -1118,15 +1374,14 @@ int main(int argc, char **argv) {
             case -1:
                 break;
             default:
+                in_str[0] = 0;
                 if (FD_ISSET(fd_udp, &testfds)) {
-                    if (verbose) printf("read udp\n");
                     struct sockaddr_in addr;
                     socklen_t addrlen = sizeof(addr);
                     ssize_t n;
                     n = recvfrom (fd_udp, in_str, BUFFER_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
                     if (n == -1) {
-                        if (verbose)
-                            printf("cant send message to PD\n");
+                        if (verbose) printf("cant send message to PD\n");
                         break;
                     }
                     in_str[n] = 0;
@@ -1134,8 +1389,7 @@ int main(int argc, char **argv) {
                     if (answer != NULL) {
                         n = sendto (fd_udp, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
                         if (n == -1) {
-                            if (verbose) 
-                                printf("cant send message to PD\n");
+                            if (verbose) printf("cant send message to PD\n");
                             break;
                         }
                         
@@ -1143,7 +1397,6 @@ int main(int argc, char **argv) {
                     free(answer);
                 }
                 if (FD_ISSET(fd_user, &testfds)) {
-                    if (verbose) printf("read tcp\n");
                     int newfd;
                     struct sockaddr_in addr;
                     socklen_t addrlen;
@@ -1151,7 +1404,7 @@ int main(int argc, char **argv) {
                     if ((newfd = accept(fd_user, (struct sockaddr*)&addr, &addrlen)) == -1 ) /*error*/ exit(1);
                     for (int i = 0; i < MAX_USERS; i++) {
                         if (users[i] == -1) {
-                            if (verbose) printf("added user\n");
+                            if (verbose) printf("Added user\n");
                             users[i] = newfd;
                             FD_SET(users[i], &inputs);
                             break;
@@ -1160,11 +1413,10 @@ int main(int argc, char **argv) {
                 }
                 for (int i = 0; i < MAX_USERS; i++) {
                     if (users[i] != -1 && FD_ISSET(users[i], &testfds)) {
-                        user_been_treat = i;
-                        n = read (users[i], in_str, BUFFER_SIZE - 1);
-                        in_str[n] = 0;
+                        current_user = i;
+                        n = read_all(users[i], in_str, BUFFER_SIZE);
                         if(socket_closed || n <= 0) {
-                            if (verbose) printf("user disconnected\n");
+                            if (verbose) printf("user disconnected.\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);
                             disconnect_user();
@@ -1173,9 +1425,9 @@ int main(int argc, char **argv) {
                             break;
                         } 
                         char* answer = treat_tcp_message(in_str);
-                        if (answer != NULL) n = write (users[i], answer, strlen(answer));
+                        if (answer != NULL) n = write_all(users[i], answer, strlen(answer));
                         if (socket_closed || n <= 0) {
-                            if (verbose) printf("user disconnected\n");
+                            if (verbose) printf("user disconnected.\n");
                             FD_CLR(users[i], &inputs);
                             close(users[i]);
                             disconnect_user();

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #include "../aux/validation.h"
 #include "../aux/conection.h"
@@ -210,12 +211,19 @@ char* read_reg_command(char* input, char* pd_ip, char* pd_port) {
     return message;
 }
 
+void quit(int sig) { 
+    // to exit the program type "exit" in the terminal
+    if (sig == 2) return;
+}
+
 int main(int argc, char **argv) {
 
     if (argc < 2 || argc > 8) {
         fprintf(stderr, "usage: %s file", argv[0]);
         exit(EXIT_FAILURE);
     }
+
+    signal(SIGINT, quit);
 
     int as_ip_flag = FALSE, pd_port_flag = FALSE, as_port_flag = FALSE;
 
@@ -310,11 +318,11 @@ int main(int argc, char **argv) {
         out_fds=select(FD_SETSIZE,&testfds,(fd_set *)NULL,(fd_set *)NULL,&timeout);
         switch(out_fds) {
             case 0:
-            // timeout
+                // timeout
                 break;
             case -1:
-                perror("select");
-                exit(1);
+                running = FALSE;
+                break;
             default:
                 if(FD_ISSET(0,&testfds)) {
                     if((n=read(0,in_str,BUFFER_SIZE))!=0) {
@@ -327,11 +335,11 @@ int main(int argc, char **argv) {
                             running = FALSE;
                             char expected_message[8] = "RUN OK\n\0";
                             char* answer = unregister(as_ip, as_port);
-                            if (strcmp(expected_message, answer) == 0) {
-                                printf("unregistration successfull\n");
+                            if (answer && strcmp(expected_message, answer) == 0) {
+                                printf("Unregistration successfull.\n");
                             }
                             else {
-                                printf("unregistration failed\n");
+                                printf("Unregistration failed.\n");
                             }
                             free(answer);
                             break;
@@ -350,7 +358,7 @@ int main(int argc, char **argv) {
                         char expected_message[8] = "RRG OK\n\0";
 
                         if (strcmp(expected_message, answer) == 0) {
-                            printf("Registration successfull\n");
+                            printf("Registration successfull.\n");
                         }
                         else {
                             printf("%s", answer);
@@ -372,12 +380,12 @@ int main(int argc, char **argv) {
                     char* vlc = (char*) malloc(sizeof(char) * VLC_SIZE + 1);
                     int out = read_vlc(in_str, vlc, &instruction, file_name);
                     if (out == 0 && instruction != 0) {
-                        printf("VC=%s, %s\n", vlc, command_to_string(instruction));
+                        printf("Validation code: %s, %s\n", vlc, command_to_string(instruction));
                         free(vlc);
                         free(file_name);
                     }
                     else if (out == 1 && instruction != 0) {
-                        printf("VC=%s, %s: %s\n", vlc, command_to_string(instruction), file_name);
+                        printf("Validation code: %s, %s: %s\n", vlc, command_to_string(instruction), file_name);
                         free(vlc);
                         free(file_name);
                     }

@@ -10,10 +10,8 @@
 #include <netdb.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <signal.h> 
-#include <sys/sendfile.h>
+#include <signal.h>
 #include <fcntl.h>
-
 
 #include "../aux/validation.h"
 #include "../aux/conection.h"
@@ -38,10 +36,22 @@ const char* NOK = "NOK\0";
 
 int user_index = 0;
 
-// what messaged to display on verbose mode?
 int verbose = FALSE;
 
 int running = TRUE;
+
+int write_all(int fd, char* message, int size) {
+    int sent = 0;
+    int n = 0;
+    while (sent < size) {
+        n = write(fd, message + sent, size - sent);
+        if (n <= 0) {
+            return sent;
+        }
+        sent += n;
+    }
+    return sent;
+}
 
 
 int validate_request_type(char* type) {
@@ -86,6 +96,8 @@ char* user_dirname(char* uid) {
     return dirname;
 }
 
+
+// validate a request with AS
 int validate_request(char* uid, char* tid, char* fop, char* fname) {
     char* message = (char*) malloc(sizeof(char) * (4 + UID_SIZE + 1 + TID_SIZE + 2));
     if (sprintf(message, "VLD %s %s\n", uid, tid) == -1) {
@@ -94,6 +106,10 @@ int validate_request(char* uid, char* tid, char* fop, char* fname) {
     }
     
     char* answer = send_udp(message, AS_IP, AS_PORT);
+    if (answer == NULL) {
+        free(answer);
+        return -1;
+    }
     free(message);
 
     int index = 0;
@@ -317,7 +333,10 @@ char* list(char* uid) {
 char* retrieve(char* uid, char* fname, int fd) {
     if (verbose) printf("retrieving file %s for user %s\n", fname, uid);
     char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1 + strlen(fname) + 1));
-    sprintf(file_path, "USERS/%s/%s", uid, fname);
+    if (sprintf(file_path, "USERS/%s/%s", uid, fname) == -1) {
+        free(file_path);
+        return NULL;
+    }
 
     FILE* file = fopen(file_path, "rb");
     if (file == NULL) {
@@ -342,7 +361,7 @@ char* retrieve(char* uid, char* fname, int fd) {
         return NULL;
     }
  
-    int n = write(fd, message, strlen(message));
+    int n = write_all(fd, message, strlen(message));
     free(message);
     if(n <= 0 || !running) {
         return NULL;
@@ -359,7 +378,7 @@ char* retrieve(char* uid, char* fname, int fd) {
             return NULL;
         }
 
-        n = write(fd, buffer, n);
+        n = write_all(fd, buffer, n);
         if (n <= 0 || !running) {
             if (verbose) printf("retrive: can't send data %s\n", uid);
             fclose(file);
@@ -378,7 +397,7 @@ char* retrieve(char* uid, char* fname, int fd) {
         fclose(file);
         return NULL;
     }
-    n = write(fd, end, 2);
+    n = write_all(fd, end, 2);
     free(end);
     if(n <= 0 || !running) {
         return NULL;
@@ -421,7 +440,10 @@ char* upload(char* uid, char* fname, char* data, int data_size, unsigned long lo
     free(dirname);
 
     char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE + 1 + strlen(fname) + 1));
-    sprintf(file_path, "USERS/%s/%s", uid, fname);
+    if (sprintf(file_path, "USERS/%s/%s", uid, fname) == -1) {
+        free(file_path);
+        return NULL;
+    }
 
     // check if file already exists
     if (stat(file_path, &st) == 0) {
@@ -495,7 +517,10 @@ char* upload(char* uid, char* fname, char* data, int data_size, unsigned long lo
 char* delete(char* uid, char* fname) {
     if (verbose) printf("deleting file %s for user %s\n", fname, uid);
     char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE  + 1 + strlen(fname) + 1));
-    sprintf(file_path, "USERS/%s/%s", uid, fname);
+    if (sprintf(file_path, "USERS/%s/%s", uid, fname) == -1) {
+        free(file_path);
+        return NULL;
+    }
 
     int ret = remove(file_path);
     free(file_path);
@@ -550,7 +575,10 @@ char* remove_all(char* uid) {
     while((dir=readdir(d)) !=NULL) {      
         if (strcmp(dir->d_name, ignore_1) != 0 && strcmp(dir->d_name, ignore_2) != 0) {
             char* file_path = (char*) malloc(sizeof(char) * (6 + UID_SIZE  + 1 + strlen(dir->d_name) + 1));
-            sprintf(file_path, "USERS/%s/%s", uid, dir->d_name);
+            if (sprintf(file_path, "USERS/%s/%s", uid, dir->d_name) == -1) {
+                free(file_path);
+                return NULL;
+            }
             int ret = remove(file_path);
             free(file_path);
 
@@ -848,13 +876,11 @@ void handle_user(int newfd) {
     }
     message[total] = '\0';
 
-    // TODO handle invalid request
     char* res = parse_user_request(message, total, newfd);
     free(message);
     if (res) {
-        n = write(newfd, res, strlen(res));
+        n = write_all(newfd, res, strlen(res));
         if(n <= 0 || !running) {
-            // TODO handle error
             free(res);
             close(newfd);
             printf("user disconected - %d\n", user_index % 100);
@@ -906,7 +932,6 @@ int main(int argc, char **argv) {
     }
 
     // open comunication sockets for as and users
-    // TODO handle error (-1)
     int fd_user = open_tcp(fs_port);
     if (fd_user == -1) {
         printf("can't create socket\n");
@@ -917,7 +942,11 @@ int main(int argc, char **argv) {
     //new directory USERS
     struct stat st = {0};
     if (stat("USERS", &st) == -1) {
-        mkdir("USERS", 0700);
+        if (mkdir("USERS", 0700) == -1) {
+            printf("can't create users directory\n");
+            free(fs_port);
+            exit(EXIT_FAILURE);
+        }
     }
 
     socklen_t addrlen;

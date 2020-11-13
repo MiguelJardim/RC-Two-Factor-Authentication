@@ -996,13 +996,19 @@ void treat_command(char* input) {
     return;
 }
 
+void quit(int sig) { 
+    // to exit the program type "exit" in the terminal
+    if (sig == 2) return;
+}
+
 int main(int argc, char **argv) {
-    // ./user[-n ASIP] [-p ASport] [-m FSIP] [-q FSport]
 
     if (argc < 1 || argc > 9) {
         fprintf(stderr, "usage: %s file", argv[0]);
         exit(EXIT_FAILURE);
     }
+
+    signal(SIGINT, quit);
 
     request = (Request*) malloc(sizeof(Request)); 
     request->fname = NULL;

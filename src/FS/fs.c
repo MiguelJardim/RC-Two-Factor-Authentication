@@ -89,6 +89,7 @@ int validate_request(char* uid, char* tid, char* fop, char* fname) {
     char* answer = send_udp(message, AS_IP, AS_PORT);
     if (answer == NULL) {
         free(answer);
+        free(message);
         return -1;
     }
     free(message);
@@ -325,10 +326,8 @@ char* retrieve(char* uid, char* fname, int fd) {
         char* message = (char*) malloc(sizeof(char) * 9);
         if (sprintf(message, "RRT EOF\n") == -1) {
             free(message);
-            fclose(file);
             return NULL;
         }
-        fclose(file);
         return message;
     }
 

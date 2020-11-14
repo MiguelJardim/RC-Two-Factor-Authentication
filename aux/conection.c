@@ -45,7 +45,7 @@ char* send_udp(char* message, char* ip, char* port) {
     FD_ZERO(&inputs); 
     FD_SET(fd, &inputs);
 
-    timeout.tv_sec = 5;
+    timeout.tv_sec = 15;
     timeout.tv_usec = 0;
     out_fds = select(FD_SETSIZE, &inputs,(fd_set *)NULL,(fd_set *)NULL, &timeout);
     switch(out_fds) {

@@ -49,16 +49,26 @@ int connect_tcp(char* ip, char* port) {
     struct addrinfo hints, *res;
 
     fd=socket(AF_INET,SOCK_STREAM,0);
-    if (fd==-1) return -1;
-
+    if (fd==-1) {
+        close(fd);
+        return -1;
+    }
     memset(&hints,0,sizeof hints);
     hints.ai_family=AF_INET;
     hints.ai_socktype=SOCK_STREAM;
     errcode= getaddrinfo(ip, port, &hints,&res);
-    if(errcode!=0) return -1;
+    if(errcode!=0) {
+        freeaddrinfo(res); 
+        close(fd);  
+        return -1; 
+    } 
 
     n= connect (fd,res->ai_addr,res->ai_addrlen);
-    if(n==-1) return -1;
+    if(n==-1) {
+        freeaddrinfo(res);
+        close(fd); 
+        return -1;
+    } 
 
     freeaddrinfo(res); 
 
@@ -348,9 +358,9 @@ void list() {
     fd_fs = connect_tcp(fs_ip, fs_port);
     if (fd_fs == -1) {
         printf("Connection error.\n");
-        free(fs_port);
         free(message);
-        exit(EXIT_FAILURE);
+        running = FALSE;
+        return;
     }
 
     int n = write_all(fd_fs, message, strlen(message));
@@ -517,9 +527,10 @@ void retrieve(char* input, int index) {
     fd_fs = connect_tcp(fs_ip, fs_port);
     if (fd_fs == -1) {
         printf("Connection error.\n");
-        free(fs_port);
         free(message);
-        exit(EXIT_FAILURE);
+        free(filename);
+        running = FALSE;
+        return;
     }
 
     // send request message
@@ -713,9 +724,10 @@ void upload(char* input, int index) {
     fd_fs = connect_tcp(fs_ip, fs_port);
     if (fd_fs == -1) {
         printf("Connection error.\n");
-        free(fs_port);
+        fclose(file);
         free(message);
-        exit(EXIT_FAILURE);
+        running = FALSE;
+        return;
     }
 
     // write the first part of the message
@@ -831,11 +843,11 @@ void delete(char* input, int index) {
     free(filename);
 
     fd_fs = connect_tcp(fs_ip, fs_port);
-
     if (fd_fs == -1) {
         printf("Connection error.\n");
-        free(fs_port);
-        exit(EXIT_FAILURE);
+        free(message);
+        running = FALSE;
+        return;
     }
 
     int n = write_all(fd_fs, message, strlen(message));
@@ -909,8 +921,9 @@ void remove_all() {
     fd_fs = connect_tcp(fs_ip, fs_port);
     if (fd_fs == -1) {
         printf("Connection error.\n");
-        free(fs_port);
-        exit(EXIT_FAILURE);
+        free(message);
+        running = FALSE;
+        return;
     }
 
     int n = write_all(fd_fs, message, strlen(message));
@@ -1171,6 +1184,7 @@ int main(int argc, char **argv) {
         free(as_port);
         free(fs_ip);
         free(fs_port);
+        free(request);
         exit(EXIT_FAILURE);
     }
 
@@ -1183,6 +1197,7 @@ int main(int argc, char **argv) {
         free(as_port);
         free(fs_ip);
         free(fs_port);
+        free(request);
         exit(EXIT_FAILURE);
     }
     
@@ -1196,6 +1211,7 @@ int main(int argc, char **argv) {
         free(as_port);
         free(fs_ip);
         free(fs_port);
+        free(request);
         exit(EXIT_FAILURE);
     }
 
@@ -1208,6 +1224,7 @@ int main(int argc, char **argv) {
         free(as_port);
         free(fs_ip);
         free(fs_port);
+        free(request);
         exit(EXIT_FAILURE);
     }
 
@@ -1215,6 +1232,10 @@ int main(int argc, char **argv) {
     if (fd_as == -1) {
         printf("Connection error.\n");
         free(as_port);
+        free(as_ip);
+        free(fs_ip);
+        free(fs_port);
+        free(request);
         exit(EXIT_FAILURE);
     }
 

@@ -361,7 +361,7 @@ int main(int argc, char **argv) {
                             printf("Registration successfull.\n");
                         }
                         else {
-                            printf("%s", answer);
+                            printf("Registration failed\n");
                         }
 
                         free(message);

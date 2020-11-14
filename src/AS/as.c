@@ -180,7 +180,7 @@ int equal_passwords(char* u_ist_id, char* password) {
         
 }
 
-int UID_exists(char* u_ist_id) {
+int uid_registed(char* u_ist_id) {
     DIR* d;
     char dirname[13];
     char reg_filename[28];
@@ -191,6 +191,29 @@ int UID_exists(char* u_ist_id) {
     d = opendir(dirname);
     if (d) {
         if (access(reg_filename, F_OK) != -1) {
+            closedir(d);
+            return TRUE;
+        }
+        else {
+            closedir(d);
+            return FALSE;  
+        }
+        
+    }
+    return FALSE;
+}
+
+int uid_exists(char* u_ist_id) {
+    DIR* d;
+    char dirname[13];
+    char pass_filename[28];
+    if (sprintf(dirname, "USERS/%s", u_ist_id) == -1 || sprintf(pass_filename, "USERS/%s/%s_pass.txt", u_ist_id, u_ist_id) == -1) {
+        if (verbose) printf("sprintf error\n");
+        return FALSE;
+    } 
+    d = opendir(dirname);
+    if (d) {
+        if (access(pass_filename, F_OK) != -1) {
             closedir(d);
             return TRUE;
         }
@@ -420,7 +443,7 @@ char* regist_uid(char* message, int i) {
     }
 
     //se ja existir este id, verifica se password é igual, se for, escreve o ip e porto e retorna OK, se nao for NOK
-    char v = UID_exists(u_ist_id);
+    char v = uid_exists(u_ist_id);
     if (v) {
         if (equal_passwords(u_ist_id, password)) {
             FILE* uid_reg_file;
@@ -557,7 +580,7 @@ char* login_uid(char* message, int i) {
         return log_status;
     }
 
-    int v = UID_exists(u_ist_id);
+    int v = uid_registed(u_ist_id);
     if (!v){
         if (verbose) printf("UID not registered on server\n");
         free(u_ist_id);
@@ -624,7 +647,7 @@ char* request_vc(char* message, int i) {
     }
 
     //verifica se o user efetuou REQ com um UID existente
-    int v = UID_exists(u_ist_id);
+    int v = uid_registed(u_ist_id);
 
     if(!v) {
         if (verbose) printf("UID not registered on server\n");
@@ -874,7 +897,7 @@ char* check_vc(char* message, int i) {
     }
 
     //verifica se o user efetuou AUT com um UID existente
-    int v = UID_exists(u_ist_id);
+    int v = uid_registed(u_ist_id);
 
     if(!v) {
         if (verbose) printf("UID not registered on server\n");
@@ -984,7 +1007,7 @@ char* vld_operation(char* message, int i) {
         return cnf_answer;
     }
     //verifica se o uid existe
-    int v = UID_exists(u_ist_id);
+    int v = uid_registed(u_ist_id);
 
     if(!v) {
         if (verbose) printf("UID not registered on server\n");
@@ -1072,7 +1095,7 @@ char* unregist_uid(char* message, int i) {
         return run_status;
     }
 
-    int v = UID_exists(u_ist_id);
+    int v = uid_exists(u_ist_id);
     if (!v){
         free(u_ist_id);
         free(password);
@@ -1304,7 +1327,7 @@ int main(int argc, char **argv) {
                     ssize_t n;
                     n = recvfrom (fd_udp, in_str, BUFFER_SIZE, 0, (struct sockaddr*)&addr, &addrlen);
                     if (n == -1) {
-                        if (verbose) printf("cant send message to PD\n");
+                        if (verbose) printf("cant send message by UDP\n");
                         break;
                     }
                     in_str[n] = 0;
@@ -1312,7 +1335,7 @@ int main(int argc, char **argv) {
                     if (answer != NULL) {
                         n = sendto (fd_udp, answer, strlen(answer), 0, (struct sockaddr*)&addr, addrlen);
                         if (n == -1) {
-                            if (verbose) printf("cant send message to PD\n");
+                            if (verbose) printf("cant send message by UDP\n");
                             break;
                         }
                         
